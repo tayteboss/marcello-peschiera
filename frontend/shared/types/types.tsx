@@ -30,30 +30,25 @@ export type TransitionsType = {
   };
 };
 
-export type ButtonType = {
-  url: string;
-  pageReference: {
-    _ref: string;
-  };
-  title: string;
-};
-
 export type SlugType = {
   current: string;
 };
 
-export type SiteSettingsType = {};
-
-export type HomePageType = {
-  seoTitle: string;
-  seoDescription: string;
-};
-
-export type WorkPageType = {
-  seoTitle: string;
-  seoDescription: string;
+export type SiteSettingsType = {
+  referenceTitle?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  biography?: string;
+  phone?: string;
+  email?: string;
+  instagramHandle?: string;
+  instagramLink?: string;
 };
 
 export type ProjectType = {
+  _id: string;
+  title: string;
+  type: "photography" | "cinematography" | "direction";
+  media: MediaType;
   slug: SlugType;
 };

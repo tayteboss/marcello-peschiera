@@ -33,7 +33,14 @@ export const mediaString = `
 
 export const siteSettingsQueryString = `
 	*[_type == 'siteSettings'][0] {
-		...,
+		referenceTitle,
+		seoTitle,
+		seoDescription,
+		biography,
+		phone,
+		email,
+		instagramHandle,
+		instagramLink,
 	}
 `;
 
@@ -53,6 +60,12 @@ export const workPageQueryString = `
 
 export const projectsQueryString = `
 	*[_type == 'project'] | order(orderRank) [0...100] {
-		...,
+		_id,
+		title,
+		type,
+		slug,
+		media {
+			${mediaString}
+		},
 	}
 `;
