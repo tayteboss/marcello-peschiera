@@ -6,6 +6,8 @@ export const GlobalStyles = createGlobalStyle`
 	:root {
 		--colour-white: ${theme.colours.white};
 		--colour-black: ${theme.colours.black};
+		--colour-light: ${theme.colours.light};
+		--colour-dark: ${theme.colours.dark};
 		--font-default: ${theme.fonts.default};
 		--transition-speed-default: ${theme.transitionSpeed.default};
 		--transition-speed-fast: ${theme.transitionSpeed.fast};
@@ -34,13 +36,15 @@ export const GlobalStyles = createGlobalStyle`
 	-webkit-text-size-adjust: 100%;
 
 	::selection {
-		background-color: black;
-		color: white;
+		background-color: var(--colour-light);
+		color: var(--colour-dark);
 	}
 
 	html {
-		background: var(--colour-white);
+		background-color: var(--colour-light);
 		font-size: 16px;
+
+		transition: background var(--transition-speed-default) var(--transition-ease);
 
 		&.no-scroll {
 			overflow-y: hidden;
@@ -299,5 +303,52 @@ export const GlobalStyles = createGlobalStyle`
 
 	.lenis.lenis-scrolling iframe {
 		pointer-events: none;
+	}
+
+	.trigger-colour {
+		.image-colour-base {
+			img, mux-player {
+				filter: grayscale(0%);
+			}
+		}
+	}
+
+	.image-colour-base {
+		overflow: hidden;
+
+		transition: all var(--transition-speed-default) var(--transition-ease), background-color var(--transition-speed-default) var(--transition-ease);
+
+		img, mux-player {
+			position: relative;
+			z-index: 2;
+			filter: grayscale(0%) brightness(200%) contrast(2);
+			mix-blend-mode: saturation;
+			transform: translate3d(0,0,0);
+			height: 100%;
+			width: 100%;
+			object-fit: cover;
+		}
+
+		&::before {
+			content: "";
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background-color: var(--colour-light);
+			z-index: 1;
+
+			transition: all var(--transition-speed-default) var(--transition-ease);
+		}
+	}
+
+	.remove-duotone {
+		.image-colour-base {
+			opacity: 0;
+		}
+		.high-res-image-layer {
+			opacity: 1;
+		}
 	}
 `;

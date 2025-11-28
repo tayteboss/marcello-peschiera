@@ -11,6 +11,11 @@ import {
   projectsQueryString,
   siteSettingsQueryString,
 } from "../lib/sanityQueries";
+import Canvas from "../components/block/Canvas";
+import InfiniteCanvas from "../components/block/InfiniteCanvas";
+import InfiniteCanvas2 from "../components/block/InfiniteCanvas2";
+import InfiniteCanvas3 from "../components/block/InfiniteCanvas3";
+import InfiniteCanvas4 from "../components/block/InfiniteCanvas4";
 
 const PageWrapper = styled(motion.div)``;
 
@@ -21,7 +26,7 @@ type Props = {
 };
 
 const Page = (props: Props) => {
-  const { projects, siteSettings, pageTransitionVariants } = props;
+  const { siteSettings, pageTransitionVariants } = props;
 
   return (
     <PageWrapper
@@ -29,12 +34,18 @@ const Page = (props: Props) => {
       initial="hidden"
       animate="visible"
       exit="hidden"
+      className="performance"
     >
       <NextSeo
         title={siteSettings?.seoTitle || ""}
         description={siteSettings?.seoDescription || ""}
       />
-      Home
+
+      {/* <Canvas /> */}
+      {/* <InfiniteCanvas /> */}
+      {/* <InfiniteCanvas2 /> */}
+      {/* <InfiniteCanvas3 /> */}
+      <InfiniteCanvas4 />
     </PageWrapper>
   );
 };

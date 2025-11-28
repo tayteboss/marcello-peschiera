@@ -1,9 +1,9 @@
 import styled from "styled-components";
 import Header from "../common/Header";
-import Footer from "../common/Footer";
 import { ReactNode } from "react";
-import { ReactLenis, useLenis } from "@studio-freight/react-lenis";
-import { SiteSettingsType } from "../../shared/types/types";
+import { GalleryFilterProvider } from "../../shared/context/context";
+// import { ReactLenis, useLenis } from "@studio-freight/react-lenis";
+// import { SiteSettingsType } from "../../shared/types/types";
 
 // const siteSettings: SiteSettingsType = require("../../json/siteSettings.json");
 
@@ -16,16 +16,15 @@ type Props = {
 const Layout = (props: Props) => {
   const { children } = props;
 
-  useLenis();
+  // useLenis();
 
   return (
-    <>
+    <GalleryFilterProvider>
       <Header />
-      <ReactLenis root>
-        <Main>{children}</Main>
-      </ReactLenis>
-      <Footer />
-    </>
+      {/* <ReactLenis root> */}
+      <Main>{children}</Main>
+      {/* </ReactLenis> */}
+    </GalleryFilterProvider>
   );
 };
 

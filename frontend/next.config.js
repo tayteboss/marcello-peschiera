@@ -20,6 +20,11 @@ const nextConfig = {
         hostname: 'image.mux.com',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'picsum.photos',
+        pathname: '/**',
+      },
     ],
     loader: 'custom',
     loaderFile: './lib/sanityImageLoader.ts',

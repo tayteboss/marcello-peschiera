@@ -16,9 +16,10 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "baseUrl": ".",
     "paths": {
       "@/*": [
-        "./src/*"
+        "./*"
       ]
     },
     "target": "ES2017"

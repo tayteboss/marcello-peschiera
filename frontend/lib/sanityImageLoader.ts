@@ -19,6 +19,12 @@ export default function imageLoader({
   width: number;
   quality?: number;
 }): string {
+  // If this is a local/public asset (e.g. `/next.svg`), don't try to
+  // parse/transform it as a remote URL. Just hand it back to Next/Image.
+  if (src.startsWith("/")) {
+    return src;
+  }
+
   const url = new URL(src);
 
   // Handle Sanity CDN URLs
@@ -42,6 +48,11 @@ export default function imageLoader({
     if (quality) {
       url.searchParams.set("quality", quality.toString());
     }
+    return url.toString();
+  }
+
+  // Handle Picsum placeholder URLs – keep them as-is
+  if (url.hostname === "picsum.photos") {
     return url.toString();
   }
 
