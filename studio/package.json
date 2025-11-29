@@ -19,8 +19,8 @@
     "react": "^19.1",
     "react-dom": "^19.1",
     "sanity": "^3.95.0",
-    "sanity-plugin-mux-input": "^0.3.4",
-    "sanity-plugin-vercel-deploy": "^1.0.9",
+    "sanity-plugin-mux-input": "^2.0.0",
+    "sanity-plugin-vercel-deploy": "^4.0.0",
     "styled-components": "^6.1.18"
   },
   "devDependencies": {

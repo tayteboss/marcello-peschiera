@@ -6,7 +6,8 @@ export const theme = {
     dark: "#2E1485",
   },
   fonts: {
-    default: "arial",
+    default:
+      'Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
   },
   mediaBreakpoints: {
     desktop: "(min-width: 1680px)",

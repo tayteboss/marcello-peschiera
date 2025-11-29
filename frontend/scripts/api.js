@@ -10,7 +10,7 @@ try {
   // If dotenv isn't available or .env is missing, just continue
 }
 
-const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || process.env.SANITY_PROJECT_ID;
+const projectId = "s6q1o64z";
 const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || process.env.SANITY_DATASET || 'production';
 
 let client = null;
@@ -34,7 +34,14 @@ if (!projectId || !dataset) {
 const getSiteData = async () => {
   const query = `
         *[_type == "siteSettings"][0] {
-        ...
+        		referenceTitle,
+            seoTitle,
+            seoDescription,
+            biography,
+            phone,
+            email,
+            instagramHandle,
+            instagramLink,
         }
     `;
 

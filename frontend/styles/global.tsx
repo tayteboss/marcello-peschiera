@@ -157,8 +157,10 @@ export const GlobalStyles = createGlobalStyle`
 	a,
 	button,
 	div {
-		font-size: ${pxToRem(16)};
+		font-size: ${pxToRem(12)};
 		line-height: ${pxToRem(16)};
+		text-transform: uppercase;
+		font-weight: 400;
 	}
 
 	mux-player {

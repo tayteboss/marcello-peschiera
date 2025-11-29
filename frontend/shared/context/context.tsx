@@ -1,12 +1,10 @@
-import {
-  createContext,
-  ReactNode,
-  useContext,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, ReactNode, useContext, useMemo, useState } from "react";
 
-export type FilterCategory = "photo" | "video" | "mixed";
+export type FilterCategory =
+  | "All"
+  | "Photography"
+  | "Direction"
+  | "Cinematography";
 
 type GalleryFilterContextValue = {
   activeCategories: FilterCategory[];
@@ -14,9 +12,9 @@ type GalleryFilterContextValue = {
   setActiveCategories: (categories: FilterCategory[]) => void;
 };
 
-const GalleryFilterContext = createContext<GalleryFilterContextValue | undefined>(
-  undefined,
-);
+const GalleryFilterContext = createContext<
+  GalleryFilterContextValue | undefined
+>(undefined);
 
 type ProviderProps = {
   children: ReactNode;
@@ -25,7 +23,7 @@ type ProviderProps = {
 export const GalleryFilterProvider = (props: ProviderProps) => {
   const { children } = props;
   const [activeCategories, setActiveCategories] = useState<FilterCategory[]>(
-    [],
+    []
   );
 
   const toggleCategory = (category: FilterCategory) => {
@@ -44,7 +42,7 @@ export const GalleryFilterProvider = (props: ProviderProps) => {
       toggleCategory,
       setActiveCategories,
     }),
-    [activeCategories],
+    [activeCategories]
   );
 
   return (
@@ -58,10 +56,10 @@ export const useGalleryFilter = (): GalleryFilterContextValue => {
   const context = useContext(GalleryFilterContext);
 
   if (!context) {
-    throw new Error("useGalleryFilter must be used within GalleryFilterProvider");
+    throw new Error(
+      "useGalleryFilter must be used within GalleryFilterProvider"
+    );
   }
 
   return context;
 };
-
-

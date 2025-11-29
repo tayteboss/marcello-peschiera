@@ -16,6 +16,7 @@ import InfiniteCanvas from "../components/block/InfiniteCanvas";
 import InfiniteCanvas2 from "../components/block/InfiniteCanvas2";
 import InfiniteCanvas3 from "../components/block/InfiniteCanvas3";
 import InfiniteCanvas4 from "../components/block/InfiniteCanvas4";
+import Header from "@/components/common/Header";
 
 const PageWrapper = styled(motion.div)``;
 
@@ -40,11 +41,6 @@ const Page = (props: Props) => {
         title={siteSettings?.seoTitle || ""}
         description={siteSettings?.seoDescription || ""}
       />
-
-      {/* <Canvas /> */}
-      {/* <InfiniteCanvas /> */}
-      {/* <InfiniteCanvas2 /> */}
-      {/* <InfiniteCanvas3 /> */}
       <InfiniteCanvas4 />
     </PageWrapper>
   );

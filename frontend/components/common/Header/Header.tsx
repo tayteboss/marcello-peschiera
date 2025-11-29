@@ -41,9 +41,21 @@ const TextLogo = styled.p`
 
 const InfoTrigger = styled.button`
   color: var(--colour-dark);
+
+  &:hover {
+    text-decoration: underline;
+  }
 `;
 
-const Header = () => {
+type Props = {
+  onInfoClick: () => void;
+  infoIsOpen: boolean;
+  infoTriggerRef?: React.RefObject<HTMLButtonElement>;
+};
+
+const Header = (props: Props) => {
+  const { onInfoClick, infoIsOpen, infoTriggerRef } = props;
+
   const handleLightSwitch = () => {
     // Get the :root element
     const root = document.documentElement;
@@ -72,7 +84,9 @@ const Header = () => {
       </LogoWrapper>
       <Nav>
         <TextLogo>Marcello Peschiera™</TextLogo>
-        <InfoTrigger>Info</InfoTrigger>
+        <InfoTrigger ref={infoTriggerRef} onClick={onInfoClick}>
+          {infoIsOpen ? "Close" : "Info"}
+        </InfoTrigger>
         <FiltersTrigger />
         <DuoToneSwitchTrigger />
       </Nav>

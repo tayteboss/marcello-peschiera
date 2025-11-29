@@ -1,11 +1,11 @@
 import styled from "styled-components";
 import Header from "../common/Header";
-import { ReactNode } from "react";
+import { ReactNode, useState, useRef } from "react";
 import { GalleryFilterProvider } from "../../shared/context/context";
-// import { ReactLenis, useLenis } from "@studio-freight/react-lenis";
-// import { SiteSettingsType } from "../../shared/types/types";
+import InfoModal from "../block/InfoModal";
+import { SiteSettingsType } from "@/shared/types/types";
 
-// const siteSettings: SiteSettingsType = require("../../json/siteSettings.json");
+const siteSettings: SiteSettingsType = require("../../json/siteSettings.json");
 
 const Main = styled.main``;
 
@@ -16,11 +16,22 @@ type Props = {
 const Layout = (props: Props) => {
   const { children } = props;
 
-  // useLenis();
+  const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
+  const infoTriggerRef = useRef<HTMLButtonElement>(null);
 
   return (
     <GalleryFilterProvider>
-      <Header />
+      <Header
+        onInfoClick={() => setIsInfoModalOpen(!isInfoModalOpen)}
+        infoIsOpen={isInfoModalOpen}
+        infoTriggerRef={infoTriggerRef}
+      />
+      <InfoModal
+        isOpen={isInfoModalOpen}
+        onClose={() => setIsInfoModalOpen(false)}
+        siteSettings={siteSettings}
+        infoTriggerRef={infoTriggerRef}
+      />
       {/* <ReactLenis root> */}
       <Main>{children}</Main>
       {/* </ReactLenis> */}

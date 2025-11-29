@@ -1,9 +1,10 @@
+import { useState, useRef } from "react";
 import styled from "styled-components";
-import { motion } from "framer-motion";
 import {
   FilterCategory,
   useGalleryFilter,
 } from "../../../shared/context/context";
+import { useClickOutside } from "../../../hooks/useClickOutside";
 
 const FiltersTriggerWrapper = styled.div`
   display: flex;
@@ -11,35 +12,85 @@ const FiltersTriggerWrapper = styled.div`
   gap: 0.5rem;
 `;
 
-const FilterButton = styled(motion.button)<{ $isActive: boolean }>`
+const TriggerButton = styled.button`
   cursor: pointer;
   color: var(--colour-dark);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+
+  &:hover {
+    text-decoration: underline;
+  }
 `;
 
-const categories: FilterCategory[] = ["photo", "video", "mixed"];
+const DropdownContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`;
+
+const FilterButton = styled.button<{ $isActive: boolean }>`
+  cursor: pointer;
+  color: var(--colour-dark);
+  text-decoration: ${(props) => (props.$isActive ? "underline" : "none")};
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const categories: FilterCategory[] = [
+  "All",
+  "Photography",
+  "Cinematography",
+  "Direction",
+];
 
 const FiltersTrigger = () => {
-  const { activeCategories, toggleCategory } = useGalleryFilter();
+  const { activeCategories, setActiveCategories } = useGalleryFilter();
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null!);
+
+  useClickOutside(wrapperRef, () => {
+    setIsOpen(false);
+  });
+
+  const selectedCategory: FilterCategory =
+    activeCategories.length > 0 && activeCategories[0] !== "All"
+      ? activeCategories[0]
+      : "All";
+
+  const handleCategoryClick = (category: FilterCategory) => {
+    setActiveCategories([category]);
+    setIsOpen(false);
+  };
 
   return (
-    <FiltersTriggerWrapper>
-      {categories.map((category) => {
-        const isActive = activeCategories.includes(category);
+    <FiltersTriggerWrapper ref={wrapperRef}>
+      {!isOpen && (
+        <TriggerButton type="button" onClick={() => setIsOpen(!isOpen)}>
+          {selectedCategory} ▼
+        </TriggerButton>
+      )}
+      {isOpen && (
+        <DropdownContainer>
+          {categories.map((category) => {
+            const isActive = activeCategories.includes(category);
 
-        return (
-          <FilterButton
-            key={category}
-            type="button"
-            $isActive={isActive}
-            onClick={() => toggleCategory(category)}
-            layout
-            whileTap={{ scale: 0.96 }}
-            transition={{ duration: 0.2, ease: [0.65, 0, 0.35, 1] }}
-          >
-            {category}
-          </FilterButton>
-        );
-      })}
+            return (
+              <FilterButton
+                key={category}
+                type="button"
+                $isActive={isActive}
+                onClick={() => handleCategoryClick(category)}
+              >
+                {category}
+              </FilterButton>
+            );
+          })}
+        </DropdownContainer>
+      )}
     </FiltersTriggerWrapper>
   );
 };
