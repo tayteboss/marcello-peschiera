@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import { gsap } from "gsap";
 import { Observer } from "gsap/Observer";
 import { MouseEvent, useEffect, useRef } from "react";
 import styled from "styled-components";
+import { useInView } from "../../../hooks/useInView";
 
 gsap.registerPlugin(Observer);
 
@@ -12,7 +14,7 @@ const GRID_SIZE = 7; // 7x7 grid of tiles per block
 
 // Controls horizontal/vertical spacing in vw units so layout scales with viewport.
 // Padding is half the gap for a uniform look at the block edges.
-const TILE_GAP_VW = 2; // visual gap between tiles (in vw)
+const TILE_GAP_VW = 1; // visual gap between tiles (in vw)
 const TILE_GAP = `${TILE_GAP_VW}vw`;
 const TILE_PADDING = `${TILE_GAP_VW / 2}vw`; // padding is half the gap for a uniform look
 
@@ -20,17 +22,37 @@ const TILE_PADDING = `${TILE_GAP_VW / 2}vw`; // padding is half the gap for a un
 // This scales the whole infinite canvas around the clicked tile.
 const CANVAS_ZOOM = 2; // how much to magnify the canvas when clicked
 const CANVAS_ZOOM_DURATION = 1.5; // seconds
-
-// Lower values make panning feel more sluggish (slower movement for the same input delta).
-// Increase this if you want snappier / faster panning.
-const PAN_SENSITIVITY = 0.5;
+const INTERMEDIATE_CANVAS_ZOOM = 1.5;
 
 // Staged zoom-out thresholds (approx px of user movement after zoom).
 // After FIRST_ZOOM_OUT_THRESHOLD, zoom out to INTERMEDIATE_CANVAS_ZOOM.
 // After SECOND_ZOOM_OUT_THRESHOLD, zoom out fully to 1.
 const FIRST_ZOOM_OUT_THRESHOLD = 500;
-const SECOND_ZOOM_OUT_THRESHOLD = 10000; // 200 + 1000
-const INTERMEDIATE_CANVAS_ZOOM = 1.5;
+const SECOND_ZOOM_OUT_THRESHOLD = 10000;
+
+// Lower values make panning feel more sluggish (slower movement for the same input delta).
+// Increase this if you want snappier / faster panning.
+const PAN_SENSITIVITY = 0.5;
+
+// Placeholder sizing for images inside tiles (simple 4:3 ratio)
+const getPlaceholderSize = (scale = 1): { width: number; height: number } => {
+  const baseWidth = 400 * scale;
+  const width = Math.max(1, Math.round(baseWidth));
+  const height = Math.round((width * 3) / 4);
+  return { width, height };
+};
+
+const getPlaceholderSrc = (
+  index: number,
+  variant: "low" | "high" = "high"
+): string => {
+  const scale = variant === "low" ? 0.3 : 1;
+  const { width, height } = getPlaceholderSize(scale);
+  const seed = `tile-${index}`;
+  return `https://picsum.photos/seed/${encodeURIComponent(
+    seed
+  )}/${width}/${height}`;
+};
 
 const InfiniteCanvasWrapper = styled.section`
   height: 100vh;
@@ -56,14 +78,78 @@ const Block = styled.div`
 
 const Tile = styled.div`
   aspect-ratio: 1 / 1;
-  background: blue;
   position: relative;
-  width: 45vw;
+  width: 15vw;
+`;
 
-  @media (min-width: 1024px) {
-    width: 15vw;
+const BaseImageLayer = styled.div`
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+`;
+
+const HighResImageLayer = styled.div`
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  z-index: 2;
+  transition: opacity var(--transition-speed-default) var(--transition-ease);
+`;
+
+const TileInner = styled.div`
+  position: relative;
+  width: 100%;
+  height: 100%;
+
+  &:hover {
+    .high-res-image-layer {
+      opacity: 1;
+    }
   }
 `;
+
+type InfiniteCanvasTileProps = {
+  index: number;
+  onClick: (event: MouseEvent<HTMLDivElement>) => void;
+};
+
+const InfiniteCanvasTile = ({ index, onClick }: InfiniteCanvasTileProps) => {
+  // Start loading images slightly before they enter the viewport
+  const [ref, inView] = useInView({
+    rootMargin: "300px",
+    threshold: 0,
+  });
+
+  return (
+    <Tile ref={ref} onClick={onClick}>
+      {inView && (
+        <TileInner>
+          <BaseImageLayer className="image-colour-base">
+            <Image
+              src={getPlaceholderSrc(index, "low")}
+              alt=""
+              fill
+              style={{ objectFit: "cover" }}
+              sizes="5vw"
+              loading="lazy"
+            />
+          </BaseImageLayer>
+
+          <HighResImageLayer className="high-res-image-layer">
+            <Image
+              src={getPlaceholderSrc(index, "high")}
+              alt=""
+              fill
+              style={{ objectFit: "cover" }}
+              sizes="30vw"
+              loading="lazy"
+            />
+          </HighResImageLayer>
+        </TileInner>
+      )}
+    </Tile>
+  );
+};
 
 const InfiniteCanvas4 = () => {
   const wrapperRef = useRef<HTMLElement | null>(null);
@@ -114,9 +200,17 @@ const InfiniteCanvas4 = () => {
     const viewportCenterX = window.innerWidth / 2;
     const viewportCenterY = window.innerHeight / 2;
 
-    // First, pan so that the clicked tile is centered in the viewport
-    const deltaX = viewportCenterX - tileCenterX;
-    const deltaY = viewportCenterY - tileCenterY;
+    // First, pan so that the clicked tile is centered in the viewport.
+    // When the wrapper is scaled, a given container translation results in
+    // a larger movement on screen, so we need to compensate by dividing
+    // by the current canvas scale.
+    const currentScale =
+      canvasScaleRef.current && canvasScaleRef.current > 0
+        ? canvasScaleRef.current
+        : 1;
+
+    const deltaX = (viewportCenterX - tileCenterX) / currentScale;
+    const deltaY = (viewportCenterY - tileCenterY) / currentScale;
 
     const incr = incrRef.current;
     incr.x += deltaX;
@@ -264,22 +358,11 @@ const InfiniteCanvas4 = () => {
   const renderContent = (isDuplicate = false) => (
     <Block aria-hidden={isDuplicate}>
       {mediaItems.map((image, index) => (
-        <Tile
+        <InfiniteCanvasTile
           key={`${isDuplicate ? "dup" : "orig"}-${index}`}
+          index={index}
           onClick={handleTileClick}
-        >
-          Tile
-        </Tile>
-        // <div
-        //   key={`${isDuplicate ? "dup" : "orig"}-${index}`}
-        //   className={cn("aspect-square select-none", imageClassName)}
-        // >
-        //   <img
-        //     src={`${imageRootPath}/${image}`}
-        //     alt=""
-        //     className="block h-full w-full object-contain"
-        //   />
-        // </div>
+        />
       ))}
     </Block>
   );
