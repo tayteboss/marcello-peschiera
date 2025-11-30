@@ -88,79 +88,21 @@ export const GlobalStyles = createGlobalStyle`
 		cursor: pointer;
 	}
 
-	h1,
-	.type-h1 {
-		font-size: ${pxToRem(48)};
-		line-height: ${pxToRem(48)};
-
-		@media ${theme.mediaBreakpoints.tabletPortrait} {
-			font-size: ${pxToRem(38)};
-			line-height: ${pxToRem(38)};
-		}
-
-		@media ${theme.mediaBreakpoints.mobile} {
-			font-size: ${pxToRem(28)};
-			line-height: ${pxToRem(28)};
-		}
-	}
-
-	h2,
-	.type-h2 {
-		font-size: ${pxToRem(48)};
-		line-height: ${pxToRem(48)};
-
-		@media ${theme.mediaBreakpoints.tabletPortrait} {
-			font-size: ${pxToRem(38)};
-			line-height: ${pxToRem(38)};
-		}
-
-		@media ${theme.mediaBreakpoints.mobile} {
-			font-size: ${pxToRem(28)};
-			line-height: ${pxToRem(28)};
-		}
-	}
-
-	h3,
-	.type-h3 {
-		font-size: ${pxToRem(48)};
-		line-height: ${pxToRem(28)};
-
-		@media ${theme.mediaBreakpoints.tabletPortrait} {
-			font-size: ${pxToRem(38)};
-			line-height: ${pxToRem(38)};
-		}
-
-		@media ${theme.mediaBreakpoints.mobile} {
-			font-size: ${pxToRem(28)};
-			line-height: ${pxToRem(28)};
-		}
-	}
-
-	h4,
-	.type-h4 {
-		font-size: ${pxToRem(48)};
-		line-height: ${pxToRem(28)};
-
-		@media ${theme.mediaBreakpoints.tabletPortrait} {
-			font-size: ${pxToRem(38)};
-			line-height: ${pxToRem(38)};
-		}
-
-		@media ${theme.mediaBreakpoints.mobile} {
-			font-size: ${pxToRem(28)};
-			line-height: ${pxToRem(28)};
-		}
-	}
-
 	p,
 	.type-p,
 	a,
 	button,
-	div {
-		font-size: ${pxToRem(12)};
-		line-height: ${pxToRem(16)};
+	div,
+	h1, h2, h3, h4, h5, h6,
+	.type-h1, .type-h2, .type-h3, .type-h4, .type-h5, .type-h6 {
+		font-size: ${pxToRem(14)};
+		line-height: normal;
 		text-transform: uppercase;
 		font-weight: 400;
+	}
+
+	.type-header {
+		font-size: ${pxToRem(12)};
 	}
 
 	mux-player {

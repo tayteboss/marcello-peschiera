@@ -69,7 +69,11 @@ const FiltersTrigger = () => {
   return (
     <FiltersTriggerWrapper ref={wrapperRef}>
       {!isOpen && (
-        <TriggerButton type="button" onClick={() => setIsOpen(!isOpen)}>
+        <TriggerButton
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="type-header"
+        >
           {selectedCategory} ▼
         </TriggerButton>
       )}
@@ -84,6 +88,7 @@ const FiltersTrigger = () => {
                 type="button"
                 $isActive={isActive}
                 onClick={() => handleCategoryClick(category)}
+                className="type-header"
               >
                 {category}
               </FilterButton>

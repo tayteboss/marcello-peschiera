@@ -83,8 +83,12 @@ const Header = (props: Props) => {
         <Logo />
       </LogoWrapper>
       <Nav>
-        <TextLogo>Marcello Peschiera™</TextLogo>
-        <InfoTrigger ref={infoTriggerRef} onClick={onInfoClick}>
+        <TextLogo className="type-header">Marcello Peschiera™</TextLogo>
+        <InfoTrigger
+          ref={infoTriggerRef}
+          onClick={onInfoClick}
+          className="type-header"
+        >
           {infoIsOpen ? "Close" : "Info"}
         </InfoTrigger>
         <FiltersTrigger />
