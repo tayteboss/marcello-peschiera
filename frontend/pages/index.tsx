@@ -12,6 +12,7 @@ import {
   siteSettingsQueryString,
 } from "../lib/sanityQueries";
 import InfiniteCanvas from "@/components/block/InfiniteCanvas";
+import Loading from "@/components/block/Loading";
 
 const PageWrapper = styled(motion.div)``;
 

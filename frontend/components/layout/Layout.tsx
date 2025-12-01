@@ -4,6 +4,7 @@ import { ReactNode, useState, useRef } from "react";
 import { GalleryFilterProvider } from "../../shared/context/context";
 import InfoModal from "../block/InfoModal";
 import { SiteSettingsType } from "@/shared/types/types";
+import Loading from "../block/Loading";
 
 const siteSettings: SiteSettingsType = require("../../json/siteSettings.json");
 
@@ -21,6 +22,7 @@ const Layout = (props: Props) => {
 
   return (
     <GalleryFilterProvider>
+      <Loading />
       <Header
         onInfoClick={() => setIsInfoModalOpen(!isInfoModalOpen)}
         infoIsOpen={isInfoModalOpen}

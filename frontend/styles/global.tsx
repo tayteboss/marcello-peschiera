@@ -95,14 +95,21 @@ export const GlobalStyles = createGlobalStyle`
 	div,
 	h1, h2, h3, h4, h5, h6,
 	.type-h1, .type-h2, .type-h3, .type-h4, .type-h5, .type-h6 {
-		font-size: ${pxToRem(14)};
+		font-size: ${pxToRem(16)};
+		letter-spacing: 0.96px;
 		line-height: normal;
 		text-transform: uppercase;
 		font-weight: 400;
+
+		@media ${theme.mediaBreakpoints.tabletPortrait} {
+			font-size: ${pxToRem(12)};
+			letter-spacing: 0.72px;
+		}
 	}
 
 	.type-header {
 		font-size: ${pxToRem(12)};
+		letter-spacing: 0.72px;
 	}
 
 	mux-player {

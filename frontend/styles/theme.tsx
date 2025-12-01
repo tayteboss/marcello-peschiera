@@ -3,10 +3,10 @@ export const theme = {
     black: "#000",
     white: "#FFF",
     light: "#DDFF00",
-    dark: "#2E1485",
+    dark: "#0D1943",
   },
   fonts: {
-    default: "Space Mono Regular, serif",
+    default: "ABCROMMonoVariable, serif",
   },
   mediaBreakpoints: {
     desktop: "(min-width: 1680px)",
@@ -20,7 +20,7 @@ export const theme = {
     innerWrapper: "1920px",
   },
   transitionSpeed: {
-    default: "250ms",
+    default: "50ms",
     fast: "200ms",
     extraFast: "100ms",
     slow: "500ms",

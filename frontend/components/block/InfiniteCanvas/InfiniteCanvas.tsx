@@ -1,16 +1,14 @@
 "use client";
 
-import Image from "next/image";
 import { gsap } from "gsap";
 import { Observer } from "gsap/Observer";
 import { MouseEvent, useEffect, useRef, useMemo, useState } from "react";
 import styled from "styled-components";
-import { motion } from "framer-motion";
-import { useInView } from "../../../hooks/useInView";
 import {
   useGalleryFilter,
   FilterCategory,
 } from "../../../shared/context/context";
+import { InfiniteCanvasTile } from "./Tile";
 
 gsap.registerPlugin(Observer);
 
@@ -22,21 +20,21 @@ const VERTICAL_STACKS = 3;
 
 // Controls horizontal/vertical spacing in vw units so layout scales with viewport.
 // Padding is half the gap for a uniform look at the block edges.
-const TILE_GAP_VW = 1; // visual gap between tiles (in vw)
+const TILE_GAP_VW = 0.5; // visual gap between tiles (in vw)
 const TILE_GAP = `${TILE_GAP_VW}vw`;
 const TILE_PADDING = `${TILE_GAP_VW / 2}vw`; // padding is half the gap for a uniform look
 
 // Zoom configuration for the entire canvas when a tile is clicked.
 // This scales the whole infinite canvas around the clicked tile.
 const CANVAS_ZOOM = 2; // how much to magnify the canvas when clicked
-const CANVAS_ZOOM_DURATION = 1.5; // seconds
+const CANVAS_ZOOM_DURATION = 1; // seconds
 const INTERMEDIATE_CANVAS_ZOOM = 1.5;
 
 // Staged zoom-out thresholds (approx px of user movement after zoom).
 // After FIRST_ZOOM_OUT_THRESHOLD, zoom out to INTERMEDIATE_CANVAS_ZOOM.
 // After SECOND_ZOOM_OUT_THRESHOLD, zoom out fully to 1.
 const FIRST_ZOOM_OUT_THRESHOLD = 500;
-const SECOND_ZOOM_OUT_THRESHOLD = 10000;
+const SECOND_ZOOM_OUT_THRESHOLD = 5000;
 
 // Lower values make panning feel more sluggish (slower movement for the same input delta).
 // Increase this if you want snappier / faster panning.
@@ -45,32 +43,16 @@ const PAN_SENSITIVITY = 0.5;
 // Threshold in pixels to distinguish between a click and a drag
 const DRAG_THRESHOLD = 5;
 
+// Threshold in pixels of pan movement before we clear any hover state on tiles.
+// This prevents tiny scroll/pan deltas from causing a visible "blink".
+const HOVER_CLEAR_PAN_THRESHOLD = 5;
+
 // Categories for testing - tiles will be assigned these categories in rotation
 const TEST_CATEGORIES: FilterCategory[] = [
   "Photography",
   "Cinematography",
   "Direction",
 ];
-
-// Placeholder sizing for images inside tiles (simple 4:3 ratio)
-const getPlaceholderSize = (scale = 1): { width: number; height: number } => {
-  const baseWidth = 400 * scale;
-  const width = Math.max(1, Math.round(baseWidth));
-  const height = Math.round((width * 3) / 4);
-  return { width, height };
-};
-
-const getPlaceholderSrc = (
-  index: number,
-  variant: "low" | "high" = "high"
-): string => {
-  const scale = variant === "low" ? 0.3 : 1;
-  const { width, height } = getPlaceholderSize(scale);
-  const seed = `tile-${index}`;
-  return `https://picsum.photos/seed/${encodeURIComponent(
-    seed
-  )}/${width}/${height}`;
-};
 
 const InfiniteCanvasWrapper = styled.section<{ $isDragging: boolean }>`
   height: 100vh;
@@ -102,116 +84,6 @@ const Block = styled.div`
   gap: ${TILE_GAP};
 `;
 
-const Tile = styled(motion.div)<{
-  $isVisible: boolean;
-  $isDragging: boolean;
-  $aspectRatio: string;
-}>`
-  aspect-ratio: ${(props) => props.$aspectRatio};
-  position: relative;
-  width: auto;
-  height: 15vw;
-  opacity: ${(props) => (props.$isVisible ? 1 : 0)};
-  pointer-events: ${(props) => (props.$isVisible ? "auto" : "none")};
-  transition: opacity var(--transition-speed-default) var(--transition-ease);
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  cursor: ${(props) => (props.$isDragging ? "grabbing" : "pointer")};
-`;
-
-const BaseImageLayer = styled.div`
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-`;
-
-const HighResImageLayer = styled.div`
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  z-index: 2;
-  transition: opacity var(--transition-speed-default) var(--transition-ease);
-`;
-
-const TileInner = styled(motion.div)`
-  position: relative;
-  width: 100%;
-  height: 100%;
-
-  &:hover {
-    .high-res-image-layer {
-      opacity: 1;
-    }
-  }
-`;
-
-type InfiniteCanvasTileProps = {
-  index: number;
-  category: FilterCategory;
-  aspectRatio: string;
-  isVisible: boolean;
-  onClick: (event: MouseEvent<HTMLDivElement>) => void;
-  onMouseDown: (event: MouseEvent<HTMLDivElement>) => void;
-  isDragging: boolean;
-};
-
-const InfiniteCanvasTile = ({
-  index,
-  category,
-  aspectRatio,
-  isVisible,
-  onClick,
-  onMouseDown,
-  isDragging,
-}: InfiniteCanvasTileProps) => {
-  // Start loading images slightly before they enter the viewport
-  const [ref, inView] = useInView({
-    rootMargin: "300px",
-    threshold: 0,
-  });
-
-  return (
-    <Tile
-      ref={ref}
-      onClick={onClick}
-      onMouseDown={onMouseDown}
-      $isVisible={isVisible}
-      $isDragging={isDragging}
-      $aspectRatio={aspectRatio}
-    >
-      {inView && (
-        <TileInner layout>
-          <BaseImageLayer className="image-colour-base">
-            <Image
-              src={getPlaceholderSrc(index, "low")}
-              alt=""
-              fill
-              style={{ objectFit: "cover" }}
-              sizes="1vw"
-              loading="lazy"
-              draggable={false}
-            />
-          </BaseImageLayer>
-
-          <HighResImageLayer className="high-res-image-layer">
-            <Image
-              src={getPlaceholderSrc(index, "high")}
-              alt=""
-              fill
-              style={{ objectFit: "cover" }}
-              sizes="30vw"
-              loading="lazy"
-              draggable={false}
-            />
-          </HighResImageLayer>
-        </TileInner>
-      )}
-    </Tile>
-  );
-};
-
 const InfiniteCanvas = () => {
   const wrapperRef = useRef<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -222,14 +94,27 @@ const InfiniteCanvas = () => {
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const hasMovedRef = useRef<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [activeTileId, setActiveTileId] = useState<string | null>(null);
 
   // Per-row horizontal / vertical infinite scrolling state
   const blockWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
   const rowBlockRefs = useRef<(HTMLDivElement | null)[]>([]);
   const rowWidthsRef = useRef<number[]>([]);
-  const worldOffsetXRef = useRef<number>(0);
-  const worldOffsetYRef = useRef<number>(0);
   const rowHeightRef = useRef<number>(0);
+
+  // Shared world-space offset for the infinite grid. All row positions are
+  // derived from this and updated via GSAP for smooth motion.
+  const worldOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const hoverClearPanDeltaRef = useRef<{ x: number; y: number }>({
+    x: 0,
+    y: 0,
+  });
+
+  // Incremental values for smooth quickTo animation (like the reference component)
+  const incrXRef = useRef<number>(0);
+  const incrYRef = useRef<number>(0);
+  const xToRef = useRef<((value: number) => void) | null>(null);
+  const yToRef = useRef<((value: number) => void) | null>(null);
 
   const { activeCategories } = useGalleryFilter();
 
@@ -281,8 +166,9 @@ const InfiniteCanvas = () => {
   }, [tilesWithCategories, activeCategories]);
 
   // Update horizontal position of each row based on a shared world X offset.
+  // This is called continuously by the quickTo animation
   const updateRowPositions = () => {
-    const worldX = worldOffsetXRef.current;
+    const worldX = worldOffsetRef.current.x;
 
     blockWrapperRefs.current.forEach((wrapper, globalIndex) => {
       const rowIndex = globalIndex % GRID_SIZE;
@@ -299,6 +185,7 @@ const InfiniteCanvas = () => {
   };
 
   // Update vertical position of each row based on a shared world Y offset.
+  // This is called continuously by the quickTo animation
   const updateVerticalPositions = () => {
     const rowHeight = rowHeightRef.current;
 
@@ -306,7 +193,7 @@ const InfiniteCanvas = () => {
 
     const stackHeight = rowHeight * GRID_SIZE;
     const wrapWorldY = gsap.utils.wrap(-stackHeight, 0);
-    const worldY = wrapWorldY(worldOffsetYRef.current);
+    const worldY = wrapWorldY(worldOffsetRef.current.y);
 
     blockWrapperRefs.current.forEach((wrapper, globalIndex) => {
       if (!wrapper) return;
@@ -351,6 +238,7 @@ const InfiniteCanvas = () => {
     canvasScaleRef.current = 1;
     moveSinceZoomRef.current = 0;
     zoomStageRef.current = 0;
+    setActiveTileId(null);
 
     gsap.to(wrapperRef.current, {
       scale: 1,
@@ -400,10 +288,38 @@ const InfiniteCanvas = () => {
         ? canvasScaleRef.current
         : 1;
 
+    const deltaX = (viewportCenterX - tileCenterX) / currentScale;
     const deltaY = (viewportCenterY - tileCenterY) / currentScale;
 
-    worldOffsetYRef.current += deltaY;
-    updateVerticalPositions();
+    const targetWorldX = worldOffsetRef.current.x + deltaX;
+    const targetWorldY = worldOffsetRef.current.y + deltaY;
+
+    // Update incremental refs to match the target
+    // Calculate the delta needed to reach target from current incremental position
+    const deltaIncrX = targetWorldX - incrXRef.current;
+    const deltaIncrY = targetWorldY - incrYRef.current;
+
+    incrXRef.current += deltaIncrX;
+    incrYRef.current += deltaIncrY;
+
+    // Smoothly animate the "camera" so the clicked tile moves to center
+    // Use quickTo for consistency with panning - it will smoothly animate to the target
+    if (xToRef.current && yToRef.current) {
+      xToRef.current(targetWorldX);
+      yToRef.current(targetWorldY);
+    } else {
+      // Fallback to gsap.to if quickTo not initialized yet
+      gsap.to(worldOffsetRef.current, {
+        x: targetWorldX,
+        y: targetWorldY,
+        duration: CANVAS_ZOOM_DURATION,
+        ease: "power3.out",
+        onUpdate: () => {
+          updateRowPositions();
+          updateVerticalPositions();
+        },
+      });
+    }
 
     // Then zoom the entire canvas (wrapper) around the viewport center.
     // Because the tile is already centered in the viewport, scaling around
@@ -458,6 +374,27 @@ const InfiniteCanvas = () => {
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Initialize quickTo functions for smooth continuous animation (like reference component)
+    // quickTo animates the worldOffset smoothly with power4 easing
+    const xTo = gsap.quickTo(worldOffsetRef.current, "x", {
+      duration: 1.5,
+      ease: "power4",
+    });
+
+    const yTo = gsap.quickTo(worldOffsetRef.current, "y", {
+      duration: 1.5,
+      ease: "power4",
+    });
+
+    xToRef.current = xTo;
+    yToRef.current = yTo;
+
+    // Use a ticker to continuously update row positions during smooth animation
+    const ticker = gsap.ticker.add(() => {
+      updateRowPositions();
+      updateVerticalPositions();
+    });
+
     const observer = Observer.create({
       target: window,
       type: "wheel,touch,pointer",
@@ -467,7 +404,11 @@ const InfiniteCanvas = () => {
             ? -self.deltaX * PAN_SENSITIVITY
             : self.deltaX * 2 * PAN_SENSITIVITY;
 
-        worldOffsetXRef.current += delta;
+        // Update incremental value and use quickTo for smooth animation
+        incrXRef.current += delta;
+        xTo(incrXRef.current);
+
+        hoverClearPanDeltaRef.current.x += delta;
 
         // Track movement after zoom to trigger staged auto zoom-out.
         if (canvasScaleRef.current > 1) {
@@ -481,6 +422,8 @@ const InfiniteCanvas = () => {
             // First stage: zoom out a bit, but not fully.
             canvasScaleRef.current = INTERMEDIATE_CANVAS_ZOOM;
             zoomStageRef.current = 2;
+            // Clear active tile when reaching first zoom out threshold
+            setActiveTileId(null);
 
             if (wrapperRef.current) {
               gsap.to(wrapperRef.current, {
@@ -499,7 +442,19 @@ const InfiniteCanvas = () => {
           }
         }
 
-        updateRowPositions();
+        // Once the pan distance exceeds a small threshold, notify tiles once
+        // to clear any stale hover state. This avoids a visible "blink" on
+        // micro-movements while still unhovering tiles that truly pan away.
+        const panDistSq =
+          hoverClearPanDeltaRef.current.x * hoverClearPanDeltaRef.current.x +
+          hoverClearPanDeltaRef.current.y * hoverClearPanDeltaRef.current.y;
+        if (
+          panDistSq >=
+          HOVER_CLEAR_PAN_THRESHOLD * HOVER_CLEAR_PAN_THRESHOLD
+        ) {
+          window.dispatchEvent(new Event("infiniteCanvasPan"));
+          hoverClearPanDeltaRef.current = { x: 0, y: 0 };
+        }
       },
       onChangeY: (self) => {
         const delta =
@@ -507,7 +462,11 @@ const InfiniteCanvas = () => {
             ? -self.deltaY * PAN_SENSITIVITY
             : self.deltaY * 2 * PAN_SENSITIVITY;
 
-        worldOffsetYRef.current += delta;
+        // Update incremental value and use quickTo for smooth animation
+        incrYRef.current += delta;
+        yTo(incrYRef.current);
+
+        hoverClearPanDeltaRef.current.y += delta;
 
         // Track movement after zoom to trigger staged auto zoom-out.
         if (canvasScaleRef.current > 1) {
@@ -520,6 +479,8 @@ const InfiniteCanvas = () => {
           ) {
             canvasScaleRef.current = INTERMEDIATE_CANVAS_ZOOM;
             zoomStageRef.current = 2;
+            // Clear active tile when reaching first zoom out threshold
+            setActiveTileId(null);
 
             if (wrapperRef.current) {
               gsap.to(wrapperRef.current, {
@@ -537,16 +498,27 @@ const InfiniteCanvas = () => {
           }
         }
 
-        updateVerticalPositions();
+        const panDistSq =
+          hoverClearPanDeltaRef.current.x * hoverClearPanDeltaRef.current.x +
+          hoverClearPanDeltaRef.current.y * hoverClearPanDeltaRef.current.y;
+        if (
+          panDistSq >=
+          HOVER_CLEAR_PAN_THRESHOLD * HOVER_CLEAR_PAN_THRESHOLD
+        ) {
+          window.dispatchEvent(new Event("infiniteCanvasPan"));
+          hoverClearPanDeltaRef.current = { x: 0, y: 0 };
+        }
       },
     });
 
     return () => {
       observer.kill();
+      gsap.ticker.remove(ticker);
     };
   }, []);
 
   const renderRowContent = (
+    stackIndex: number,
     rowIndex: number,
     instanceIndex: number,
     blockRef?: (el: HTMLDivElement | null) => void
@@ -557,18 +529,35 @@ const InfiniteCanvas = () => {
 
     return (
       <Block aria-hidden={instanceIndex !== 0} ref={blockRef}>
-        {rowTiles.map((tile) => (
-          <InfiniteCanvasTile
-            key={`inst-${instanceIndex}-row-${rowIndex}-${tile.index}`}
-            index={tile.index}
-            category={tile.category}
-            aspectRatio={tile.aspectRatio}
-            isVisible={tile.isVisible}
-            onClick={handleTileClick}
-            onMouseDown={handleTileMouseDown}
-            isDragging={isDragging}
-          />
-        ))}
+        {rowTiles.map((tile) => {
+          const instanceId = `stack-${stackIndex}-inst-${instanceIndex}-row-${rowIndex}-${tile.index}`;
+          const isActive = activeTileId === instanceId;
+
+          return (
+            <InfiniteCanvasTile
+              key={instanceId}
+              index={tile.index}
+              category={tile.category}
+              aspectRatio={tile.aspectRatio}
+              isVisible={tile.isVisible}
+              isDragging={isDragging}
+              isActive={isActive}
+              onClick={(event) => {
+                // If the same tile is clicked while zoomed in, clear active
+                // state and zoom back out to the default level.
+                if (isActive && canvasScaleRef.current > 1) {
+                  setActiveTileId(null);
+                  zoomOutCanvas();
+                  return;
+                }
+
+                setActiveTileId(instanceId);
+                handleTileClick(event);
+              }}
+              onMouseDown={handleTileMouseDown}
+            />
+          );
+        })}
       </Block>
     );
   };
@@ -588,6 +577,7 @@ const InfiniteCanvas = () => {
                 }}
               >
                 {renderRowContent(
+                  stackIndex,
                   rowIndex,
                   0,
                   stackIndex === 0
@@ -596,8 +586,8 @@ const InfiniteCanvas = () => {
                       }
                     : undefined
                 )}
-                {renderRowContent(rowIndex, 1)}
-                {renderRowContent(rowIndex, 2)}
+                {renderRowContent(stackIndex, rowIndex, 1)}
+                {renderRowContent(stackIndex, rowIndex, 2)}
               </BlockWrapper>
             );
           })

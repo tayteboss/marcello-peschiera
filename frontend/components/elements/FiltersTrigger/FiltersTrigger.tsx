@@ -74,7 +74,7 @@ const FiltersTrigger = () => {
           onClick={() => setIsOpen(!isOpen)}
           className="type-header"
         >
-          {selectedCategory} ▼
+          {selectedCategory} [{activeCategories}]
         </TriggerButton>
       )}
       {isOpen && (
