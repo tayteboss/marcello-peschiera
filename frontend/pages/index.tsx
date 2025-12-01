@@ -12,7 +12,6 @@ import {
   siteSettingsQueryString,
 } from "../lib/sanityQueries";
 import InfiniteCanvas from "@/components/block/InfiniteCanvas";
-import Loading from "@/components/block/Loading";
 
 const PageWrapper = styled(motion.div)``;
 
@@ -23,7 +22,9 @@ type Props = {
 };
 
 const Page = (props: Props) => {
-  const { siteSettings, pageTransitionVariants } = props;
+  const { siteSettings, projects, pageTransitionVariants } = props;
+
+  console.log("projects", projects);
 
   return (
     <PageWrapper
@@ -37,7 +38,7 @@ const Page = (props: Props) => {
         title={siteSettings?.seoTitle || ""}
         description={siteSettings?.seoDescription || ""}
       />
-      <InfiniteCanvas />
+      <InfiniteCanvas projects={projects} />
     </PageWrapper>
   );
 };

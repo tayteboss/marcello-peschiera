@@ -1,34 +1,79 @@
 export const mediaString = `
-	...,
-	mediaType,
-	image {
-		asset-> {
-			url,
-			metadata {
-				lqip
+	"media": {
+		"mediaType": coalesce(media.mediaType, media.media.mediaType),
+		"image": coalesce(
+			media.image{
+				asset-> {
+					url,
+					metadata {
+						lqip,
+						dimensions {
+							aspectRatio,
+							width,
+							height,
+						},
+					}
+				},
+				alt
+			},
+			media.media.image{
+				asset-> {
+					url,
+					metadata {
+						lqip,
+						dimensions {
+							aspectRatio,
+							width,
+							height,
+						},
+					}
+				},
+				alt
 			}
-		},
-		alt
-	},
-	video {
-		asset-> {
-			playbackId,
-		},
-	},
-	mobileImage {
-		asset-> {
-			url,
-			metadata {
-				lqip
+		),
+		"thumbnailImage": coalesce(
+			media.thumbnailImage{
+				asset-> {
+					url,
+					metadata {
+						lqip,
+						dimensions {
+							aspectRatio,
+							width,
+							height,
+						},
+					}
+				},
+				alt
+			},
+			media.media.thumbnailImage{
+				asset-> {
+					url,
+					metadata {
+						lqip,
+						dimensions {
+							aspectRatio,
+							width,
+							height,
+						},
+					}
+				},
+				alt
 			}
-		},
-		alt
-	},
-	mobileVideo {
-		asset-> {
-			playbackId,
-		},
-	},
+		),
+		"video": coalesce(
+			media.video{
+				asset-> {
+					playbackId,
+				},
+			},
+			media.media.video{
+				asset-> {
+					playbackId,
+				},
+			}
+		)
+	}
 `;
 
 export const siteSettingsQueryString = `
@@ -59,13 +104,11 @@ export const workPageQueryString = `
 `;
 
 export const projectsQueryString = `
-	*[_type == 'project'] | order(orderRank) [0...100] {
+	*[_type == 'project'] [0...100] {
 		_id,
 		title,
 		type,
 		slug,
-		media {
-			${mediaString}
-		},
+		${mediaString}
 	}
 `;

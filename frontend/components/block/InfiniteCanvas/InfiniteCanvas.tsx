@@ -9,6 +9,7 @@ import {
   FilterCategory,
 } from "../../../shared/context/context";
 import { InfiniteCanvasTile } from "./Tile";
+import { ProjectType } from "@/shared/types/types";
 
 gsap.registerPlugin(Observer);
 
@@ -26,7 +27,7 @@ const TILE_PADDING = `${TILE_GAP_VW / 2}vw`; // padding is half the gap for a un
 
 // Zoom configuration for the entire canvas when a tile is clicked.
 // This scales the whole infinite canvas around the clicked tile.
-const CANVAS_ZOOM = 2; // how much to magnify the canvas when clicked
+const CANVAS_ZOOM = 3; // how much to magnify the canvas when clicked
 const CANVAS_ZOOM_DURATION = 1; // seconds
 const INTERMEDIATE_CANVAS_ZOOM = 1.5;
 
@@ -47,12 +48,21 @@ const DRAG_THRESHOLD = 5;
 // This prevents tiny scroll/pan deltas from causing a visible "blink".
 const HOVER_CLEAR_PAN_THRESHOLD = 5;
 
-// Categories for testing - tiles will be assigned these categories in rotation
-const TEST_CATEGORIES: FilterCategory[] = [
-  "Photography",
-  "Cinematography",
-  "Direction",
-];
+// Categories derived from project.type
+const mapProjectTypeToFilterCategory = (
+  type: ProjectType["type"]
+): FilterCategory => {
+  switch (type) {
+    case "photography":
+      return "Photography";
+    case "cinematography":
+      return "Cinematography";
+    case "direction":
+      return "Direction";
+    default:
+      return "Photography";
+  }
+};
 
 const InfiniteCanvasWrapper = styled.section<{ $isDragging: boolean }>`
   height: 100vh;
@@ -84,7 +94,13 @@ const Block = styled.div`
   gap: ${TILE_GAP};
 `;
 
-const InfiniteCanvas = () => {
+type Props = {
+  projects: ProjectType[];
+};
+
+const InfiniteCanvas = (props: Props) => {
+  const { projects } = props;
+
   const wrapperRef = useRef<HTMLElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasScaleRef = useRef<number>(1);
@@ -110,6 +126,14 @@ const InfiniteCanvas = () => {
     y: 0,
   });
 
+  // Track how far the user has panned since the current tile became active.
+  // Used to clear the active state after enough movement (e.g. 500px).
+  const moveSinceActiveRef = useRef<number>(0);
+
+  // Mirror of activeTileId in a ref so we can read it safely inside GSAP
+  // Observer callbacks without re-creating the observer on every render.
+  const activeTileIdRef = useRef<string | null>(null);
+
   // Incremental values for smooth quickTo animation (like the reference component)
   const incrXRef = useRef<number>(0);
   const incrYRef = useRef<number>(0);
@@ -125,31 +149,92 @@ const InfiniteCanvas = () => {
     index: number;
     category: FilterCategory;
     aspectRatio: string;
+    project?: ProjectType;
+    aspectPadding?: string;
+    widthFactor: number;
   };
 
   const ASPECT_RATIOS: string[] = ["1 / 1", "4 / 5", "5 / 4", "16 / 9"];
 
-  // Assign categories to tiles for testing
-  // Uses Math.random() for completely random assignment (generated once on mount)
+  // Build tile descriptors from projects, repeating them to fill the grid.
+  // Falls back to placeholder metadata if there are no projects.
   const tilesWithCategories = useMemo<TileDescriptor[]>(() => {
-    return Array.from({ length: numberOfImages }, (_, index) => {
-      const category = TEST_CATEGORIES[
-        Math.floor(Math.random() * TEST_CATEGORIES.length)
-      ] as FilterCategory;
+    if (projects && projects.length > 0) {
+      // Shuffle a copy so the pattern feels less repetitive
+      const shuffledProjects = [...projects].sort(() => Math.random() - 0.5);
 
-      // Deterministic aspect ratio per index so all duplicates line up
+      const baseTiles: Omit<TileDescriptor, "index">[] = shuffledProjects.map(
+        (project) => {
+          const category = mapProjectTypeToFilterCategory(project.type);
+
+          // Prefer thumbnailImage dimensions for videos, otherwise fall back to main image.
+          const imageSource =
+            project.media?.thumbnailImage ?? project.media?.image;
+
+          const dimensions =
+            imageSource?.asset?.metadata?.dimensions ?? undefined;
+
+          let aspectRatio: string = ASPECT_RATIOS[0];
+          let aspectPadding: string | undefined;
+          let widthFactor = 1;
+
+          if (dimensions) {
+            // Sanity's aspectRatio is width / height. Trust it when present.
+            const ar =
+              dimensions.aspectRatio && dimensions.aspectRatio > 0
+                ? dimensions.aspectRatio
+                : dimensions.width && dimensions.height
+                  ? dimensions.width / dimensions.height
+                  : undefined;
+
+            if (ar && ar > 0) {
+              widthFactor = ar; // width / height
+              aspectRatio = `${ar} / 1`;
+              // padding-top uses height / width * 100
+              aspectPadding = `${(1 / ar) * 100}%`;
+            }
+          }
+
+          return {
+            category,
+            aspectRatio,
+            project,
+            aspectPadding,
+            widthFactor,
+          };
+        }
+      );
+
+      const tiles: TileDescriptor[] = [];
+
+      for (let index = 0; index < numberOfImages; index += 1) {
+        const source = baseTiles[index % baseTiles.length];
+        tiles.push({
+          index,
+          category: source.category,
+          aspectRatio: source.aspectRatio,
+          project: source.project,
+          aspectPadding: source.aspectPadding,
+          widthFactor: source.widthFactor,
+        });
+      }
+
+      return tiles;
+    }
+
+    // Placeholder behaviour if there are no projects
+    return Array.from({ length: numberOfImages }, (_, index) => {
       const aspectRatio =
         ASPECT_RATIOS[index % ASPECT_RATIOS.length] ?? ASPECT_RATIOS[0];
 
       return {
         index,
-        category,
+        category: "Photography",
         aspectRatio,
+        widthFactor: 1,
       };
     });
-    // Empty dependency array ensures this only runs once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [projects, numberOfImages]);
 
   // Determine visibility for each tile based on active categories
   const tilesWithVisibility = useMemo(() => {
@@ -207,6 +292,12 @@ const InfiniteCanvas = () => {
     });
   };
 
+  const setActiveTile = (id: string | null) => {
+    activeTileIdRef.current = id;
+    moveSinceActiveRef.current = 0;
+    setActiveTileId(id);
+  };
+
   // Measure each row's base block width (one pattern repeat per row).
   useEffect(() => {
     const updateRowWidths = () => {
@@ -238,7 +329,7 @@ const InfiniteCanvas = () => {
     canvasScaleRef.current = 1;
     moveSinceZoomRef.current = 0;
     zoomStageRef.current = 0;
-    setActiveTileId(null);
+    setActiveTile(null);
 
     gsap.to(wrapperRef.current, {
       scale: 1,
@@ -410,9 +501,10 @@ const InfiniteCanvas = () => {
 
         hoverClearPanDeltaRef.current.x += delta;
 
+        const distance = Math.abs(self.deltaX);
+
         // Track movement after zoom to trigger staged auto zoom-out.
         if (canvasScaleRef.current > 1) {
-          const distance = Math.abs(self.deltaX);
           moveSinceZoomRef.current += distance;
 
           if (
@@ -423,7 +515,7 @@ const InfiniteCanvas = () => {
             canvasScaleRef.current = INTERMEDIATE_CANVAS_ZOOM;
             zoomStageRef.current = 2;
             // Clear active tile when reaching first zoom out threshold
-            setActiveTileId(null);
+            setActiveTile(null);
 
             if (wrapperRef.current) {
               gsap.to(wrapperRef.current, {
@@ -439,6 +531,14 @@ const InfiniteCanvas = () => {
           ) {
             // Second stage: zoom all the way back out.
             zoomOutCanvas();
+          }
+        }
+
+        // Clear active tile if the user has panned far enough since activation
+        if (activeTileIdRef.current) {
+          moveSinceActiveRef.current += distance;
+          if (moveSinceActiveRef.current >= FIRST_ZOOM_OUT_THRESHOLD) {
+            setActiveTile(null);
           }
         }
 
@@ -468,9 +568,10 @@ const InfiniteCanvas = () => {
 
         hoverClearPanDeltaRef.current.y += delta;
 
+        const distance = Math.abs(self.deltaY);
+
         // Track movement after zoom to trigger staged auto zoom-out.
         if (canvasScaleRef.current > 1) {
-          const distance = Math.abs(self.deltaY);
           moveSinceZoomRef.current += distance;
 
           if (
@@ -480,7 +581,7 @@ const InfiniteCanvas = () => {
             canvasScaleRef.current = INTERMEDIATE_CANVAS_ZOOM;
             zoomStageRef.current = 2;
             // Clear active tile when reaching first zoom out threshold
-            setActiveTileId(null);
+            setActiveTile(null);
 
             if (wrapperRef.current) {
               gsap.to(wrapperRef.current, {
@@ -495,6 +596,14 @@ const InfiniteCanvas = () => {
             moveSinceZoomRef.current >= SECOND_ZOOM_OUT_THRESHOLD
           ) {
             zoomOutCanvas();
+          }
+        }
+
+        // Clear active tile if the user has panned far enough since activation
+        if (activeTileIdRef.current) {
+          moveSinceActiveRef.current += distance;
+          if (moveSinceActiveRef.current >= FIRST_ZOOM_OUT_THRESHOLD) {
+            setActiveTile(null);
           }
         }
 
@@ -542,16 +651,20 @@ const InfiniteCanvas = () => {
               isVisible={tile.isVisible}
               isDragging={isDragging}
               isActive={isActive}
+              media={tile.project?.media}
+              title={tile.project?.title}
+              aspectPadding={tile.aspectPadding}
+              widthFactor={tile.widthFactor}
               onClick={(event) => {
                 // If the same tile is clicked while zoomed in, clear active
                 // state and zoom back out to the default level.
                 if (isActive && canvasScaleRef.current > 1) {
-                  setActiveTileId(null);
+                  setActiveTile(null);
                   zoomOutCanvas();
                   return;
                 }
 
-                setActiveTileId(instanceId);
+                setActiveTile(instanceId);
                 handleTileClick(event);
               }}
               onMouseDown={handleTileMouseDown}

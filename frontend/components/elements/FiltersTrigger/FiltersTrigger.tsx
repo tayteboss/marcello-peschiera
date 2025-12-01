@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import styled from "styled-components";
 import {
   FilterCategory,
@@ -47,7 +47,12 @@ const categories: FilterCategory[] = [
   "Direction",
 ];
 
-const FiltersTrigger = () => {
+type Props = {
+  onOpenChange?: (isOpen: boolean) => void;
+};
+
+const FiltersTrigger = (props: Props) => {
+  const { onOpenChange } = props;
   const { activeCategories, setActiveCategories } = useGalleryFilter();
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null!);
@@ -55,6 +60,10 @@ const FiltersTrigger = () => {
   useClickOutside(wrapperRef, () => {
     setIsOpen(false);
   });
+
+  useEffect(() => {
+    onOpenChange?.(isOpen);
+  }, [isOpen, onOpenChange]);
 
   const selectedCategory: FilterCategory =
     activeCategories.length > 0 && activeCategories[0] !== "All"
@@ -66,6 +75,13 @@ const FiltersTrigger = () => {
     setIsOpen(false);
   };
 
+  const getIsActive = (category: FilterCategory): boolean => {
+    if (category === "All") {
+      return activeCategories.length === 0 || activeCategories.includes("All");
+    }
+    return activeCategories.includes(category);
+  };
+
   return (
     <FiltersTriggerWrapper ref={wrapperRef}>
       {!isOpen && (
@@ -74,13 +90,13 @@ const FiltersTrigger = () => {
           onClick={() => setIsOpen(!isOpen)}
           className="type-header"
         >
-          {selectedCategory} [{activeCategories}]
+          Filters [{selectedCategory}]
         </TriggerButton>
       )}
       {isOpen && (
         <DropdownContainer>
           {categories.map((category) => {
-            const isActive = activeCategories.includes(category);
+            const isActive = getIsActive(category);
 
             return (
               <FilterButton

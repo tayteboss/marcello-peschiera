@@ -269,7 +269,7 @@ export const GlobalStyles = createGlobalStyle`
 
 		transition: all var(--transition-speed-default) var(--transition-ease), background-color var(--transition-speed-default) var(--transition-ease);
 
-		img, mux-player {
+		img, mux-player, mux-video {
 			position: relative;
 			z-index: 2;
 			filter: grayscale(0%) brightness(200%) contrast(2);

@@ -73,6 +73,12 @@ const mediaBlock = [
         ...videoObject,
         hidden: ({parent}: any) => parent?.mediaType !== 'video',
       },
+      {
+        ...imageObject,
+        title: 'Thumbnail Image',
+        name: 'thumbnailImage',
+        hidden: ({parent}: any) => parent?.mediaType !== 'video',
+      },
     ],
   },
 ]

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import styled from "styled-components";
 import Logo from "../../svg/Logo";
 import pxToRem from "../../../utils/pxToRem";
@@ -35,12 +36,14 @@ const Nav = styled.div`
   pointer-events: auto;
 `;
 
-const TextLogo = styled.p`
+const TextLogo = styled.p<{ $isHidden: boolean }>`
   color: var(--colour-dark);
+  display: ${(props) => (props.$isHidden ? "none" : "block")};
 `;
 
-const InfoTrigger = styled.button`
+const InfoTrigger = styled.button<{ $isHidden: boolean }>`
   color: var(--colour-dark);
+  display: ${(props) => (props.$isHidden ? "none" : "block")};
 
   &:hover {
     text-decoration: underline;
@@ -55,6 +58,7 @@ type Props = {
 
 const Header = (props: Props) => {
   const { onInfoClick, infoIsOpen, infoTriggerRef } = props;
+  const [filtersIsOpen, setFiltersIsOpen] = useState(false);
 
   const handleLightSwitch = () => {
     // Get the :root element
@@ -83,15 +87,18 @@ const Header = (props: Props) => {
         <Logo />
       </LogoWrapper>
       <Nav>
-        <TextLogo className="type-header">Marcello Peschiera™</TextLogo>
+        <TextLogo className="type-header" $isHidden={filtersIsOpen}>
+          Marcello Peschiera™
+        </TextLogo>
         <InfoTrigger
           ref={infoTriggerRef}
           onClick={onInfoClick}
           className="type-header"
+          $isHidden={filtersIsOpen}
         >
           {infoIsOpen ? "Close" : "Info"}
         </InfoTrigger>
-        <FiltersTrigger />
+        <FiltersTrigger onOpenChange={setFiltersIsOpen} />
         <DuoToneSwitchTrigger />
       </Nav>
     </HeaderWrapper>

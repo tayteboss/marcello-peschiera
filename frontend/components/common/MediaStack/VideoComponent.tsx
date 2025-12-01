@@ -87,6 +87,7 @@ type Props = {
   lazyLoad?: boolean;
   minResolution?: undefined | "2160p" | "1440p" | "1080p" | "720p" | "480p";
   aspectPadding?: string;
+  shouldPlay?: boolean;
 };
 
 const VideoComponent = (props: Props) => {
@@ -99,6 +100,7 @@ const VideoComponent = (props: Props) => {
     lazyLoad,
     minResolution,
     aspectPadding,
+    shouldPlay = false,
   } = props;
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
 
@@ -147,7 +149,6 @@ const VideoComponent = (props: Props) => {
           <MuxPlayer
             streamType="on-demand"
             playbackId={playbackId}
-            autoPlay="muted"
             loop={true}
             thumbnailTime={1}
             loading={lazyLoad ? "viewport" : "page"}
@@ -157,6 +158,7 @@ const VideoComponent = (props: Props) => {
             poster={`${posterUrl}`}
             minResolution={minResolution}
             onLoadedData={handleVideoLoad}
+            paused={!(inView && shouldPlay)}
           />
         </Inner>
       )}

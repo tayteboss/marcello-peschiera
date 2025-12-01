@@ -20,6 +20,7 @@ type Props = {
   useImageParallax?: boolean;
   useMobileData?: MediaType;
   aspectPadding?: string;
+  shouldPlayVideo?: boolean;
 };
 
 const MediaStack = (props: Props) => {
@@ -34,6 +35,7 @@ const MediaStack = (props: Props) => {
     useImageParallax = false,
     useMobileData,
     aspectPadding,
+    shouldPlayVideo,
   } = props ?? {};
 
   // sizes="(max-width: 768px) 38vw, (max-width: 1024px) 20vw, 15vw"
@@ -58,6 +60,7 @@ const MediaStack = (props: Props) => {
           lazyLoad={lazyLoad}
           minResolution={minResolution}
           aspectPadding={aspectPadding}
+          shouldPlay={shouldPlayVideo}
         />
       )}
       {!useVideo && (

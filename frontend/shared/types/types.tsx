@@ -11,6 +11,20 @@ export type MediaType = {
     };
     alt: string;
   };
+  thumbnailImage?: {
+    asset: {
+      url: string;
+      metadata: {
+        lqip: string;
+        dimensions?: {
+          aspectRatio?: number;
+          width?: number;
+          height?: number;
+        };
+      };
+    };
+    alt: string;
+  };
   caption?: string;
 };
 
