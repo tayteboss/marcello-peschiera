@@ -24,15 +24,12 @@ type Props = {
 const Page = (props: Props) => {
   const { siteSettings, projects, pageTransitionVariants } = props;
 
-  console.log("projects", projects);
-
   return (
     <PageWrapper
       variants={pageTransitionVariants}
       initial="hidden"
       animate="visible"
       exit="hidden"
-      className="performance"
     >
       <NextSeo
         title={siteSettings?.seoTitle || ""}

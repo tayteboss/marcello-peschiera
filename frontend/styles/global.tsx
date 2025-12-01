@@ -57,6 +57,26 @@ export const GlobalStyles = createGlobalStyle`
 
 	body {
 		position: relative;
+
+		&.light-mode {
+			.info-modal-wrapper {
+				background: rgba(221, 255, 0, 0.6);
+
+					* {
+						color: var(--colour-dark);
+					}
+			}
+		}
+
+		&.dark-mode {
+			.info-modal-wrapper {
+				background: rgba(13, 25, 67, 0.6);
+
+				* {
+					color: var(--colour-dark);
+				}
+			}
+		}
 	}
 
 	input,

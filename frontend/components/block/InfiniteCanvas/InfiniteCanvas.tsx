@@ -13,21 +13,26 @@ import { ProjectType } from "@/shared/types/types";
 
 gsap.registerPlugin(Observer);
 
-// Square grid configuration so horizontal and vertical wrapping behave the same
-const GRID_SIZE = 7; // 7x7 grid of tiles per logical block
+// Grid configuration. We keep at least 5 rows to comfortably cover the viewport
+// vertically, but use fewer columns per row to keep the total tile count lean.
+// This also makes it easy to "balance" a set of 20 projects across a 5x4 block.
+const GRID_ROWS = 5; // vertical rows per block
+const GRID_COLS = 4; // horizontal tiles per row
 
-// How many vertical stacks of rows to render for seamless vertical panning
-const VERTICAL_STACKS = 3;
+// How many vertical stacks of rows to render for seamless vertical panning.
+// 2 stacks are usually sufficient to cover the viewport while panning and
+// keep the DOM size smaller than 3 stacks.
+const VERTICAL_STACKS = 2;
 
 // Controls horizontal/vertical spacing in vw units so layout scales with viewport.
 // Padding is half the gap for a uniform look at the block edges.
-const TILE_GAP_VW = 0.5; // visual gap between tiles (in vw)
+const TILE_GAP_VW = 1; // visual gap between tiles (in vw)
 const TILE_GAP = `${TILE_GAP_VW}vw`;
 const TILE_PADDING = `${TILE_GAP_VW / 2}vw`; // padding is half the gap for a uniform look
 
 // Zoom configuration for the entire canvas when a tile is clicked.
 // This scales the whole infinite canvas around the clicked tile.
-const CANVAS_ZOOM = 3; // how much to magnify the canvas when clicked
+const CANVAS_ZOOM = 3.5; // how much to magnify the canvas when clicked
 const CANVAS_ZOOM_DURATION = 1; // seconds
 const INTERMEDIATE_CANVAS_ZOOM = 1.5;
 
@@ -37,16 +42,17 @@ const INTERMEDIATE_CANVAS_ZOOM = 1.5;
 const FIRST_ZOOM_OUT_THRESHOLD = 500;
 const SECOND_ZOOM_OUT_THRESHOLD = 5000;
 
+// How far the user can pan (in px of cumulative movement) before we clear the
+// currently active tile. This is independent from zoom-out thresholds so we
+// can keep tiles "latched" for shorter movements.
+const ACTIVE_TILE_CLEAR_THRESHOLD = 200;
+
 // Lower values make panning feel more sluggish (slower movement for the same input delta).
 // Increase this if you want snappier / faster panning.
 const PAN_SENSITIVITY = 0.5;
 
 // Threshold in pixels to distinguish between a click and a drag
-const DRAG_THRESHOLD = 5;
-
-// Threshold in pixels of pan movement before we clear any hover state on tiles.
-// This prevents tiny scroll/pan deltas from causing a visible "blink".
-const HOVER_CLEAR_PAN_THRESHOLD = 5;
+const DRAG_THRESHOLD = 1;
 
 // Categories derived from project.type
 const mapProjectTypeToFilterCategory = (
@@ -69,6 +75,11 @@ const InfiniteCanvasWrapper = styled.section<{ $isDragging: boolean }>`
   width: 100%;
   overflow: hidden;
   cursor: ${(props) => (props.$isDragging ? "grabbing" : "default")};
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000;
+  transform: translate3d(0, 0, 0);
+  transform: translateZ(0);
 `;
 
 const InfiniteCanvasInner = styled.div`
@@ -111,6 +122,7 @@ const InfiniteCanvas = (props: Props) => {
   const hasMovedRef = useRef<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [activeTileId, setActiveTileId] = useState<string | null>(null);
+  const [isPanning, setIsPanning] = useState<boolean>(false);
 
   // Per-row horizontal / vertical infinite scrolling state
   const blockWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -121,10 +133,6 @@ const InfiniteCanvas = (props: Props) => {
   // Shared world-space offset for the infinite grid. All row positions are
   // derived from this and updated via GSAP for smooth motion.
   const worldOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const hoverClearPanDeltaRef = useRef<{ x: number; y: number }>({
-    x: 0,
-    y: 0,
-  });
 
   // Track how far the user has panned since the current tile became active.
   // Used to clear the active state after enough movement (e.g. 500px).
@@ -134,6 +142,13 @@ const InfiniteCanvas = (props: Props) => {
   // Observer callbacks without re-creating the observer on every render.
   const activeTileIdRef = useRef<string | null>(null);
 
+  // Track current panning state in a ref so we only trigger React state
+  // updates when the value actually changes, instead of on every wheel/pan
+  // event. This reduces re-renders during continuous panning.
+  const isPanningRef = useRef<boolean>(false);
+
+  const panningTimeoutRef = useRef<number | null>(null);
+
   // Incremental values for smooth quickTo animation (like the reference component)
   const incrXRef = useRef<number>(0);
   const incrYRef = useRef<number>(0);
@@ -142,8 +157,8 @@ const InfiniteCanvas = (props: Props) => {
 
   const { activeCategories } = useGalleryFilter();
 
-  // GRID_SIZE x GRID_SIZE tiles to form a square block.
-  const numberOfImages = GRID_SIZE * GRID_SIZE;
+  // GRID_ROWS x GRID_COLS tiles to form one logical block pattern.
+  const numberOfImages = GRID_ROWS * GRID_COLS;
 
   type TileDescriptor = {
     index: number;
@@ -156,12 +171,28 @@ const InfiniteCanvas = (props: Props) => {
 
   const ASPECT_RATIOS: string[] = ["1 / 1", "4 / 5", "5 / 4", "16 / 9"];
 
+  const stableHash = (value: string): number => {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      const chr = value.charCodeAt(i);
+      hash = (hash << 5) - hash + chr;
+      hash |= 0; // Convert to 32bit integer
+    }
+    return hash;
+  };
+
   // Build tile descriptors from projects, repeating them to fill the grid.
   // Falls back to placeholder metadata if there are no projects.
   const tilesWithCategories = useMemo<TileDescriptor[]>(() => {
     if (projects && projects.length > 0) {
-      // Shuffle a copy so the pattern feels less repetitive
-      const shuffledProjects = [...projects].sort(() => Math.random() - 0.5);
+      // Deterministically "shuffle" projects based on their id so that
+      // server and client renders match (avoiding hydration issues) while
+      // still giving a pseudo-random distribution.
+      const shuffledProjects = [...projects].sort((a, b) => {
+        const ha = stableHash(a._id);
+        const hb = stableHash(b._id);
+        return ha - hb;
+      });
 
       const baseTiles: Omit<TileDescriptor, "index">[] = shuffledProjects.map(
         (project) => {
@@ -256,7 +287,7 @@ const InfiniteCanvas = (props: Props) => {
     const worldX = worldOffsetRef.current.x;
 
     blockWrapperRefs.current.forEach((wrapper, globalIndex) => {
-      const rowIndex = globalIndex % GRID_SIZE;
+      const rowIndex = globalIndex % GRID_ROWS;
       const rowWidth = rowWidthsRef.current[rowIndex];
       if (!wrapper || !rowWidth) return;
 
@@ -276,15 +307,15 @@ const InfiniteCanvas = (props: Props) => {
 
     if (!rowHeight) return;
 
-    const stackHeight = rowHeight * GRID_SIZE;
+    const stackHeight = rowHeight * GRID_ROWS;
     const wrapWorldY = gsap.utils.wrap(-stackHeight, 0);
     const worldY = wrapWorldY(worldOffsetRef.current.y);
 
     blockWrapperRefs.current.forEach((wrapper, globalIndex) => {
       if (!wrapper) return;
 
-      const stackIndex = Math.floor(globalIndex / GRID_SIZE);
-      const rowIndex = globalIndex % GRID_SIZE;
+      const stackIndex = Math.floor(globalIndex / GRID_ROWS);
+      const rowIndex = globalIndex % GRID_ROWS;
 
       const baseY = stackIndex * stackHeight + rowIndex * rowHeight + worldY;
 
@@ -486,10 +517,33 @@ const InfiniteCanvas = (props: Props) => {
       updateVerticalPositions();
     });
 
+    const markPanning = () => {
+      // Only toggle React state when we actually change panning state to
+      // avoid unnecessary re-renders during continuous wheel/drag events.
+      if (!isPanningRef.current) {
+        isPanningRef.current = true;
+        setIsPanning(true);
+      }
+
+      if (panningTimeoutRef.current !== null) {
+        window.clearTimeout(panningTimeoutRef.current);
+      }
+
+      // Small debounce so hover is disabled during inertial motion,
+      // but quickly re-enabled once panning stops.
+      panningTimeoutRef.current = window.setTimeout(() => {
+        isPanningRef.current = false;
+        setIsPanning(false);
+        panningTimeoutRef.current = null;
+      }, 120);
+    };
+
     const observer = Observer.create({
       target: window,
       type: "wheel,touch,pointer",
       onChangeX: (self) => {
+        markPanning();
+
         const delta =
           self.event.type === "wheel"
             ? -self.deltaX * PAN_SENSITIVITY
@@ -498,8 +552,6 @@ const InfiniteCanvas = (props: Props) => {
         // Update incremental value and use quickTo for smooth animation
         incrXRef.current += delta;
         xTo(incrXRef.current);
-
-        hoverClearPanDeltaRef.current.x += delta;
 
         const distance = Math.abs(self.deltaX);
 
@@ -534,29 +586,20 @@ const InfiniteCanvas = (props: Props) => {
           }
         }
 
-        // Clear active tile if the user has panned far enough since activation
+        // Clear active tile if the user has panned far enough since activation.
+        // This is separate from zoom-out behaviour so a tile can stay visually
+        // active/playing for small movements, but deactivate once the user
+        // has clearly moved away.
         if (activeTileIdRef.current) {
           moveSinceActiveRef.current += distance;
-          if (moveSinceActiveRef.current >= FIRST_ZOOM_OUT_THRESHOLD) {
+          if (moveSinceActiveRef.current >= ACTIVE_TILE_CLEAR_THRESHOLD) {
             setActiveTile(null);
           }
         }
-
-        // Once the pan distance exceeds a small threshold, notify tiles once
-        // to clear any stale hover state. This avoids a visible "blink" on
-        // micro-movements while still unhovering tiles that truly pan away.
-        const panDistSq =
-          hoverClearPanDeltaRef.current.x * hoverClearPanDeltaRef.current.x +
-          hoverClearPanDeltaRef.current.y * hoverClearPanDeltaRef.current.y;
-        if (
-          panDistSq >=
-          HOVER_CLEAR_PAN_THRESHOLD * HOVER_CLEAR_PAN_THRESHOLD
-        ) {
-          window.dispatchEvent(new Event("infiniteCanvasPan"));
-          hoverClearPanDeltaRef.current = { x: 0, y: 0 };
-        }
       },
       onChangeY: (self) => {
+        markPanning();
+
         const delta =
           self.event.type === "wheel"
             ? -self.deltaY * PAN_SENSITIVITY
@@ -565,8 +608,6 @@ const InfiniteCanvas = (props: Props) => {
         // Update incremental value and use quickTo for smooth animation
         incrYRef.current += delta;
         yTo(incrYRef.current);
-
-        hoverClearPanDeltaRef.current.y += delta;
 
         const distance = Math.abs(self.deltaY);
 
@@ -599,23 +640,12 @@ const InfiniteCanvas = (props: Props) => {
           }
         }
 
-        // Clear active tile if the user has panned far enough since activation
+        // Clear active tile if the user has panned far enough since activation.
         if (activeTileIdRef.current) {
           moveSinceActiveRef.current += distance;
-          if (moveSinceActiveRef.current >= FIRST_ZOOM_OUT_THRESHOLD) {
+          if (moveSinceActiveRef.current >= ACTIVE_TILE_CLEAR_THRESHOLD) {
             setActiveTile(null);
           }
-        }
-
-        const panDistSq =
-          hoverClearPanDeltaRef.current.x * hoverClearPanDeltaRef.current.x +
-          hoverClearPanDeltaRef.current.y * hoverClearPanDeltaRef.current.y;
-        if (
-          panDistSq >=
-          HOVER_CLEAR_PAN_THRESHOLD * HOVER_CLEAR_PAN_THRESHOLD
-        ) {
-          window.dispatchEvent(new Event("infiniteCanvasPan"));
-          hoverClearPanDeltaRef.current = { x: 0, y: 0 };
         }
       },
     });
@@ -623,6 +653,11 @@ const InfiniteCanvas = (props: Props) => {
     return () => {
       observer.kill();
       gsap.ticker.remove(ticker);
+
+      if (panningTimeoutRef.current !== null) {
+        window.clearTimeout(panningTimeoutRef.current);
+        panningTimeoutRef.current = null;
+      }
     };
   }, []);
 
@@ -632,8 +667,8 @@ const InfiniteCanvas = (props: Props) => {
     instanceIndex: number,
     blockRef?: (el: HTMLDivElement | null) => void
   ) => {
-    const startIndex = rowIndex * GRID_SIZE;
-    const endIndex = startIndex + GRID_SIZE;
+    const startIndex = rowIndex * GRID_COLS;
+    const endIndex = startIndex + GRID_COLS;
     const rowTiles = tilesWithVisibility.slice(startIndex, endIndex);
 
     return (
@@ -650,6 +685,7 @@ const InfiniteCanvas = (props: Props) => {
               aspectRatio={tile.aspectRatio}
               isVisible={tile.isVisible}
               isDragging={isDragging}
+              isPanning={isPanning}
               isActive={isActive}
               media={tile.project?.media}
               title={tile.project?.title}
@@ -679,8 +715,8 @@ const InfiniteCanvas = (props: Props) => {
     <InfiniteCanvasWrapper ref={wrapperRef} $isDragging={isDragging}>
       <InfiniteCanvasInner ref={containerRef}>
         {Array.from({ length: VERTICAL_STACKS }, (_, stackIndex) =>
-          Array.from({ length: GRID_SIZE }, (_, rowIndex) => {
-            const globalIndex = stackIndex * GRID_SIZE + rowIndex;
+          Array.from({ length: GRID_ROWS }, (_, rowIndex) => {
+            const globalIndex = stackIndex * GRID_ROWS + rowIndex;
 
             return (
               <BlockWrapper

@@ -13,9 +13,6 @@ const InfoModalWrapper = styled(motion.section)`
   left: 0;
   width: 100%;
   height: 100dvh;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(25px);
-  -webkit-backdrop-filter: blur(25px);
   z-index: 50;
   display: flex;
   justify-content: center;
@@ -108,6 +105,7 @@ const InfoModal = (props: Props) => {
           initial="hidden"
           animate="visible"
           exit="hidden"
+          className="info-modal-wrapper"
         >
           <Inner ref={ref}>
             {biography && (

@@ -61,8 +61,9 @@ const Header = (props: Props) => {
   const [filtersIsOpen, setFiltersIsOpen] = useState(false);
 
   const handleLightSwitch = () => {
-    // Get the :root element
+    // Get the :root element and the body
     const root = document.documentElement;
+    const body = document.body;
 
     // Get the current values of --colour-light and --colour-dark
     const currentLight =
@@ -73,6 +74,18 @@ const Header = (props: Props) => {
     // Swap them by setting the CSS variables
     root.style.setProperty("--colour-light", currentDark);
     root.style.setProperty("--colour-dark", currentLight);
+
+    // Toggle class on body for light/dark mode
+    if (body.classList.contains("dark-mode")) {
+      body.classList.remove("dark-mode");
+      body.classList.add("light-mode");
+    } else if (body.classList.contains("light-mode")) {
+      body.classList.remove("light-mode");
+      body.classList.add("dark-mode");
+    } else {
+      // If none set, assume starting light
+      body.classList.add("dark-mode");
+    }
   };
 
   return (
