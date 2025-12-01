@@ -2,7 +2,14 @@
 
 import { gsap } from "gsap";
 import { Observer } from "gsap/Observer";
-import { MouseEvent, useEffect, useRef, useMemo, useState } from "react";
+import {
+  MouseEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+  useState,
+} from "react";
 import styled from "styled-components";
 import {
   useGalleryFilter,
@@ -70,16 +77,28 @@ const mapProjectTypeToFilterCategory = (
   }
 };
 
-const InfiniteCanvasWrapper = styled.section<{ $isDragging: boolean }>`
+const InfiniteCanvasWrapper = styled.section`
   height: 100vh;
   width: 100%;
   overflow: hidden;
-  cursor: ${(props) => (props.$isDragging ? "grabbing" : "default")};
+  cursor: default;
   -webkit-transform: translateZ(0);
   backface-visibility: hidden;
   perspective: 1000;
   transform: translate3d(0, 0, 0);
   transform: translateZ(0);
+
+  &.is-panning * {
+    pointer-events: none;
+  }
+
+  &.is-dragging {
+    cursor: grabbing;
+  }
+
+  &.is-dragging * {
+    pointer-events: none;
+  }
 `;
 
 const InfiniteCanvasInner = styled.div`
@@ -120,9 +139,7 @@ const InfiniteCanvas = (props: Props) => {
   const isDraggingRef = useRef<boolean>(false);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const hasMovedRef = useRef<boolean>(false);
-  const [isDragging, setIsDragging] = useState<boolean>(false);
   const [activeTileId, setActiveTileId] = useState<string | null>(null);
-  const [isPanning, setIsPanning] = useState<boolean>(false);
 
   // Per-row horizontal / vertical infinite scrolling state
   const blockWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -470,7 +487,9 @@ const InfiniteCanvas = (props: Props) => {
       if (distance > DRAG_THRESHOLD) {
         isDraggingRef.current = true;
         hasMovedRef.current = true;
-        setIsDragging(true);
+        if (wrapperRef.current) {
+          wrapperRef.current.classList.add("is-dragging");
+        }
       }
     };
 
@@ -480,7 +499,9 @@ const InfiniteCanvas = (props: Props) => {
         isDraggingRef.current = false;
         dragStartRef.current = null;
         hasMovedRef.current = false;
-        setIsDragging(false);
+        if (wrapperRef.current) {
+          wrapperRef.current.classList.remove("is-dragging");
+        }
       }, 0);
     };
 
@@ -522,7 +543,9 @@ const InfiniteCanvas = (props: Props) => {
       // avoid unnecessary re-renders during continuous wheel/drag events.
       if (!isPanningRef.current) {
         isPanningRef.current = true;
-        setIsPanning(true);
+        if (wrapperRef.current) {
+          wrapperRef.current.classList.add("is-panning");
+        }
       }
 
       if (panningTimeoutRef.current !== null) {
@@ -533,7 +556,9 @@ const InfiniteCanvas = (props: Props) => {
       // but quickly re-enabled once panning stops.
       panningTimeoutRef.current = window.setTimeout(() => {
         isPanningRef.current = false;
-        setIsPanning(false);
+        if (wrapperRef.current) {
+          wrapperRef.current.classList.remove("is-panning");
+        }
         panningTimeoutRef.current = null;
       }, 120);
     };
@@ -661,6 +686,25 @@ const InfiniteCanvas = (props: Props) => {
     };
   }, []);
 
+  const handleTileClickWrapper = useCallback(
+    (event: MouseEvent<HTMLDivElement>, tileId: string) => {
+      const isActive = tileId === activeTileIdRef.current;
+
+      // If the same tile is clicked while zoomed in, clear active
+      // state and zoom back out to the default level.
+      if (isActive && canvasScaleRef.current > 1) {
+        setActiveTile(null);
+        zoomOutCanvas();
+        return;
+      }
+
+      setActiveTile(tileId);
+      handleTileClick(event);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   const renderRowContent = (
     stackIndex: number,
     rowIndex: number,
@@ -680,29 +724,17 @@ const InfiniteCanvas = (props: Props) => {
           return (
             <InfiniteCanvasTile
               key={instanceId}
+              tileId={instanceId}
               index={tile.index}
               category={tile.category}
               aspectRatio={tile.aspectRatio}
               isVisible={tile.isVisible}
-              isDragging={isDragging}
-              isPanning={isPanning}
               isActive={isActive}
               media={tile.project?.media}
               title={tile.project?.title}
               aspectPadding={tile.aspectPadding}
               widthFactor={tile.widthFactor}
-              onClick={(event) => {
-                // If the same tile is clicked while zoomed in, clear active
-                // state and zoom back out to the default level.
-                if (isActive && canvasScaleRef.current > 1) {
-                  setActiveTile(null);
-                  zoomOutCanvas();
-                  return;
-                }
-
-                setActiveTile(instanceId);
-                handleTileClick(event);
-              }}
+              onClick={handleTileClickWrapper}
               onMouseDown={handleTileMouseDown}
             />
           );
@@ -712,7 +744,7 @@ const InfiniteCanvas = (props: Props) => {
   };
 
   return (
-    <InfiniteCanvasWrapper ref={wrapperRef} $isDragging={isDragging}>
+    <InfiniteCanvasWrapper ref={wrapperRef}>
       <InfiniteCanvasInner ref={containerRef}>
         {Array.from({ length: VERTICAL_STACKS }, (_, stackIndex) =>
           Array.from({ length: GRID_ROWS }, (_, rowIndex) => {
