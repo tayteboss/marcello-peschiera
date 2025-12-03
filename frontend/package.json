@@ -53,6 +53,7 @@
     "@types/react-dom": "^18",
     "@types/use-sync-external-store": "^1.5.0",
     "babel-plugin-styled-components": "^2.1.4",
+    "baseline-browser-mapping": "^2.8.32",
     "eslint": "^9.39.1",
     "eslint-config-next": "^16.0.3",
     "next-sitemap": "^4.2.3",

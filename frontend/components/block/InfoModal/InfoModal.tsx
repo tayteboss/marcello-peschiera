@@ -18,6 +18,7 @@ const InfoModalWrapper = styled(motion.section)`
   justify-content: center;
   align-items: center;
   cursor: pointer;
+  background: rgba(221, 255, 0, 0.6);
 `;
 
 const Inner = styled.div`

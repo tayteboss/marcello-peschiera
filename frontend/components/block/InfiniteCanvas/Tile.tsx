@@ -1,22 +1,29 @@
 import Image from "next/image";
-import { MouseEvent, useState, memo } from "react";
+import { MouseEvent, useEffect, useState, memo } from "react";
 import styled from "styled-components";
 
 import { FilterCategory } from "../../../shared/context/context";
 import MediaStack from "../../common/MediaStack";
 import { MediaType } from "@/shared/types/types";
 
-const TILE_HEIGHT_VW = 12;
-const TILE_HEIGHT = `${TILE_HEIGHT_VW}vw`;
+const DESKTOP_TILE_HEIGHT_VW = 12;
+const MOBILE_TILE_HEIGHT_VW = 30; // Double the height percentage for mobile since cols are halved
 
 const TileRoot = styled.div<{
   $isVisible: boolean;
   $aspectRatio: string;
   $widthFactor: number;
+  $isMobile: boolean;
 }>`
   position: relative;
-  height: ${TILE_HEIGHT};
-  width: ${({ $widthFactor }) => `${TILE_HEIGHT_VW * ($widthFactor || 1)}vw`};
+  height: ${(props) =>
+    props.$isMobile
+      ? `${MOBILE_TILE_HEIGHT_VW}vw`
+      : `${DESKTOP_TILE_HEIGHT_VW}vw`};
+  width: ${({ $widthFactor, $isMobile }) =>
+    $isMobile
+      ? `${MOBILE_TILE_HEIGHT_VW * ($widthFactor || 1)}vw`
+      : `${DESKTOP_TILE_HEIGHT_VW * ($widthFactor || 1)}vw`};
   opacity: ${(props) => (props.$isVisible ? 1 : 0)};
   pointer-events: ${(props) => (props.$isVisible ? "auto" : "none")};
   transition: opacity var(--transition-speed-default) var(--transition-ease);
@@ -68,8 +75,9 @@ export type InfiniteCanvasTileProps = {
   title?: string;
   aspectPadding?: string;
   widthFactor?: number;
-  tileId: string;
-  onClick: (event: MouseEvent<HTMLDivElement>, tileId: string) => void;
+  tileIndex: number;
+  isMobile?: boolean;
+  onClick: (event: MouseEvent<HTMLDivElement>, tileIndex: number) => void;
   onMouseDown: (event: MouseEvent<HTMLDivElement>) => void;
 };
 
@@ -84,7 +92,8 @@ export const InfiniteCanvasTile = memo(
     title,
     aspectPadding,
     widthFactor = 1,
-    tileId,
+    tileIndex,
+    isMobile = false,
     onClick,
     onMouseDown,
   }: InfiniteCanvasTileProps) => {
@@ -103,9 +112,18 @@ export const InfiniteCanvasTile = memo(
     const isVideoActive = isVideo && isHighResOn;
     const shouldPlayVideo = isVideoActive;
 
+    // When a tile transitions from active -> inactive (because another tile
+    // was clicked), clear any latched hover state so the high-res content
+    // is only shown for the currently active tile.
+    useEffect(() => {
+      if (!isActive) {
+        setIsHovered(false);
+      }
+    }, [isActive]);
+
     return (
       <TileRoot
-        onClick={(e) => onClick(e, tileId)}
+        onClick={(e) => onClick(e, tileIndex)}
         onMouseDown={onMouseDown}
         onMouseEnter={() => {
           // CSS pointer-events: none on parent handles panning interactions.
@@ -122,6 +140,7 @@ export const InfiniteCanvasTile = memo(
         $isVisible={isVisible}
         $aspectRatio={aspectRatio}
         $widthFactor={widthFactor}
+        $isMobile={isMobile}
       >
         <TileInner
           $isActive={isActive}
@@ -139,14 +158,14 @@ export const InfiniteCanvasTile = memo(
                     alt={title ?? thumbnailImage.alt ?? ""}
                     fill
                     style={{ objectFit: "cover" }}
-                    sizes="25vw"
+                    sizes={isMobile ? "50vw" : "25vw"}
                     loading="lazy"
                   />
                 ) : (
                   <MediaStack
                     data={media}
                     alt={title ?? media.image?.alt ?? ""}
-                    sizes="25vw"
+                    sizes={isMobile ? "50vw" : "25vw"}
                     lazyLoad
                     noFadeInAnimation
                     shouldPlayVideo={false}
@@ -158,7 +177,7 @@ export const InfiniteCanvasTile = memo(
                 <MediaStack
                   data={media}
                   alt={title ?? media.image?.alt ?? ""}
-                  sizes="40vw"
+                  sizes={isMobile ? "80vw" : "40vw"}
                   lazyLoad
                   noFadeInAnimation
                   shouldPlayVideo={shouldPlayVideo}

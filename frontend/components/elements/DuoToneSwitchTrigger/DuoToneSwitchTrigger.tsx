@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import styled from "styled-components";
 
-const DuoToneSwitchTriggerWrapper = styled.button`
+const DuoToneSwitchTriggerWrapper = styled.button<{ $isHidden: boolean }>`
   /* Basic reset */
   border: none;
   padding: 0;
@@ -11,7 +11,12 @@ const DuoToneSwitchTriggerWrapper = styled.button`
   align-items: center;
   justify-content: center;
 
-  /* You can tweak positioning/spacing where this is used */
+  @media ${(props) => props.theme.mediaBreakpoints.tabletPortrait} {
+    display: ${(props) => (props.$isHidden ? "none" : "flex")};
+    order: 2;
+    align-items: center;
+    flex: 1;
+  }
 `;
 
 const ToggleTrack = styled.div`
@@ -42,7 +47,13 @@ const knobTransition = {
   damping: 20,
 };
 
-const DuoToneSwitchTrigger = () => {
+type Props = {
+  isHidden: boolean;
+};
+
+const DuoToneSwitchTrigger = (props: Props) => {
+  const { isHidden } = props;
+
   const [isOn, setIsOn] = useState<boolean>(true);
 
   useEffect(() => {
@@ -66,6 +77,7 @@ const DuoToneSwitchTrigger = () => {
       type="button"
       aria-pressed={isOn}
       onClick={handleToggle}
+      $isHidden={isHidden}
     >
       <ToggleTrack>
         <ToggleKnob

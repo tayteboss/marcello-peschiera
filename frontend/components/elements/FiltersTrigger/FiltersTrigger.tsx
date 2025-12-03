@@ -10,17 +10,46 @@ const FiltersTriggerWrapper = styled.div`
   display: flex;
   align-items: center;
   gap: 0.5rem;
+
+  @media ${(props) => props.theme.mediaBreakpoints.tabletPortrait} {
+    order: 3;
+    flex: 1;
+    justify-content: flex-end;
+  }
 `;
 
-const TriggerButton = styled.button`
+const DesktopTriggerButton = styled.button`
   cursor: pointer;
   color: var(--colour-dark);
   display: flex;
   align-items: center;
   gap: 0.25rem;
 
+  @media ${(props) => props.theme.mediaBreakpoints.tabletPortrait} {
+    display: none;
+  }
+
   &:hover {
     text-decoration: underline;
+  }
+
+  @media (hover: none) and (pointer: coarse) {
+    &:hover {
+      text-decoration: none;
+    }
+  }
+`;
+
+const MobileTriggerButton = styled.button`
+  display: none;
+
+  @media ${(props) => props.theme.mediaBreakpoints.tabletPortrait} {
+    color: var(--colour-dark);
+    gap: 0.25rem;
+    display: flex;
+    justify-content: flex-end;
+    text-align: right;
+    flex: 1;
   }
 `;
 
@@ -38,6 +67,18 @@ const FilterButton = styled.button<{ $isActive: boolean }>`
   &:hover {
     text-decoration: underline;
   }
+
+  @media (hover: none) and (pointer: coarse) {
+    &:hover {
+      text-decoration: none;
+    }
+  }
+`;
+
+const CloseFilters = styled.button`
+  cursor: pointer;
+  color: var(--colour-dark);
+  text-decoration: none;
 `;
 
 const categories: FilterCategory[] = [
@@ -85,13 +126,22 @@ const FiltersTrigger = (props: Props) => {
   return (
     <FiltersTriggerWrapper ref={wrapperRef}>
       {!isOpen && (
-        <TriggerButton
+        <DesktopTriggerButton
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           className="type-header"
         >
           Filters [{selectedCategory}]
-        </TriggerButton>
+        </DesktopTriggerButton>
+      )}
+      {!isOpen && (
+        <MobileTriggerButton
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="type-header"
+        >
+          [{selectedCategory}]
+        </MobileTriggerButton>
       )}
       {isOpen && (
         <DropdownContainer>
@@ -110,6 +160,12 @@ const FiltersTrigger = (props: Props) => {
               </FilterButton>
             );
           })}
+          <CloseFilters
+            className="type-header"
+            onClick={() => setIsOpen(false)}
+          >
+            [x]
+          </CloseFilters>
         </DropdownContainer>
       )}
     </FiltersTriggerWrapper>

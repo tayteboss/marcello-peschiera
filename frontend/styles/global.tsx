@@ -122,7 +122,7 @@ export const GlobalStyles = createGlobalStyle`
 		font-weight: 400;
 
 		@media ${theme.mediaBreakpoints.tabletPortrait} {
-			font-size: ${pxToRem(12)};
+			font-size: ${pxToRem(11)};
 			letter-spacing: 0.72px;
 		}
 	}
@@ -130,6 +130,10 @@ export const GlobalStyles = createGlobalStyle`
 	.type-header {
 		font-size: ${pxToRem(12)};
 		letter-spacing: 0.72px;
+
+		@media ${theme.mediaBreakpoints.tabletPortrait} {
+			font-size: ${pxToRem(11)};
+		}
 	}
 
 	mux-player {
