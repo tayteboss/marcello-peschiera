@@ -92,6 +92,7 @@ const InfiniteCanvasWrapper = styled.section`
      the canvas on touch devices. */
   touch-action: none;
   overscroll-behavior: none;
+  overscroll-behavior-x: none; /* Explicitly prevent horizontal swipe-back on desktop trackpad */
   -webkit-transform: translateZ(0);
   backface-visibility: hidden;
   perspective: 1000;
@@ -608,13 +609,22 @@ const InfiniteCanvas = (props: Props) => {
         }, 50);
       },
 
-      onWheel: () => {
+      onWheel: (self) => {
+        // Prevent browser default behaviors (including swipe-back) on wheel/trackpad gestures
+        if (self.event && self.event.preventDefault) {
+          self.event.preventDefault();
+        }
         // Explicitly handle wheel events to mark panning (pointer-events: none)
         // without triggering "is-dragging" (cursor: grabbing).
         markPanning();
       },
 
       onChangeX: (self) => {
+        // Prevent browser swipe-back gesture on desktop trackpad when panning horizontally
+        if (self.event && self.event.preventDefault) {
+          self.event.preventDefault();
+        }
+
         // markPanning acts as a general "activity" indicator for performance
         markPanning();
 
@@ -669,6 +679,11 @@ const InfiniteCanvas = (props: Props) => {
         }
       },
       onChangeY: (self) => {
+        // Prevent browser default behaviors when panning vertically
+        if (self.event && self.event.preventDefault) {
+          self.event.preventDefault();
+        }
+
         markPanning();
 
         const delta =
