@@ -23,7 +23,7 @@ gsap.registerPlugin(Observer);
 
 // Base grid configuration (minimums)
 // Desktop defaults
-const DESKTOP_GRID_ROWS = 5;
+const DESKTOP_GRID_ROWS = 6;
 const DESKTOP_GRID_COLS = 4;
 
 // Mobile/Tablet defaults (Portrait < 768px)

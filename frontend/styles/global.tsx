@@ -288,6 +288,16 @@ export const GlobalStyles = createGlobalStyle`
 		}
 	}
 
+	.media-wrapper {
+		img {
+			top: 50% !important;
+			left: 50% !important;
+			transform: translate(-50%, -50%) !important;
+			width: calc(100% - 2px) !important;
+			height: calc(100% - 2px) !important;
+		}
+	}
+
 	.image-colour-base {
 		overflow: hidden;
 
@@ -299,8 +309,8 @@ export const GlobalStyles = createGlobalStyle`
 			filter: grayscale(0%) brightness(200%) contrast(2);
 			mix-blend-mode: saturation;
 			transform: translate3d(0,0,0);
-			height: 100%;
-			width: 100%;
+			height: calc(100% - 10px);
+			width: calc(100% - 10px);
 			object-fit: cover;
 		}
 

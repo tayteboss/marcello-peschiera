@@ -32,7 +32,7 @@ const TileRoot = styled.div<{
   -moz-user-select: none;
   -ms-user-select: none;
   cursor: pointer;
-  overflow: hidden;
+  /* overflow: hidden; */
 
   .media-wrapper {
     height: 100%;
@@ -158,14 +158,14 @@ export const InfiniteCanvasTile = memo(
                     alt={title ?? thumbnailImage.alt ?? ""}
                     fill
                     style={{ objectFit: "cover" }}
-                    sizes={isMobile ? "50vw" : "25vw"}
+                    sizes={isMobile ? "15vw" : "10vw"}
                     loading="lazy"
                   />
                 ) : (
                   <MediaStack
                     data={media}
                     alt={title ?? media.image?.alt ?? ""}
-                    sizes={isMobile ? "50vw" : "25vw"}
+                    sizes={isMobile ? "15vw" : "10vw"}
                     lazyLoad
                     noFadeInAnimation
                     shouldPlayVideo={false}
