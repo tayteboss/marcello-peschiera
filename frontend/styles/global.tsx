@@ -43,6 +43,7 @@ export const GlobalStyles = createGlobalStyle`
 	html {
 		background-color: var(--colour-light);
 		font-size: 16px;
+		overscroll-behavior-x: none;
 
 		transition: background var(--transition-speed-default) var(--transition-ease);
 
