@@ -38,22 +38,21 @@ const VERTICAL_STACKS = 2;
 // Controls horizontal/vertical spacing in vw units so layout scales with viewport.
 // Padding is half the gap for a uniform look at the block edges.
 // Desktop
-const DESKTOP_TILE_GAP_VW = 1;
-// Mobile - slightly larger relative gap for touch targets if needed, or keep consistent
-const MOBILE_TILE_GAP_VW = 2;
+const DESKTOP_TILE_GAP_VW = 7;
+const MOBILE_TILE_GAP_VW = 12;
 
 // Zoom configuration for the entire canvas when a tile is clicked.
 // This scales the whole infinite canvas around the clicked tile.
-const CANVAS_ZOOM = 3.5; // how much to magnify the canvas when clicked
+const CANVAS_ZOOM = 3;
 const CANVAS_ZOOM_MOBILE = 1.5;
-const CANVAS_ZOOM_DURATION = 1.25; // seconds
+const CANVAS_ZOOM_DURATION = 1.25;
 const INTERMEDIATE_CANVAS_ZOOM = 1.5;
 
 // Staged zoom-out thresholds (approx px of user movement after zoom).
 // After FIRST_ZOOM_OUT_THRESHOLD, zoom out to INTERMEDIATE_CANVAS_ZOOM.
 // After SECOND_ZOOM_OUT_THRESHOLD, zoom out fully to 1.
 const FIRST_ZOOM_OUT_THRESHOLD = 500;
-const SECOND_ZOOM_OUT_THRESHOLD = 4000;
+const SECOND_ZOOM_OUT_THRESHOLD = 2000;
 
 // How far the user can pan (in px of cumulative movement) before we clear the
 // currently active tile. This is independent from zoom-out thresholds so we
@@ -62,7 +61,7 @@ const ACTIVE_TILE_CLEAR_THRESHOLD = 200;
 
 // Lower values make panning feel more sluggish (slower movement for the same input delta).
 // Increase this if you want snappier / faster panning.
-const PAN_SENSITIVITY = 0.4;
+const PAN_SENSITIVITY = 1;
 
 // Threshold in pixels to distinguish between a click and a drag
 const DRAG_THRESHOLD = 1;
@@ -87,9 +86,6 @@ const InfiniteCanvasWrapper = styled.section`
   height: 100vh;
   width: 100%;
   overflow: hidden;
-  cursor: default;
-  /* Prevent native scrolling / pull-to-refresh gestures while dragging
-     the canvas on touch devices. */
   touch-action: none;
   overscroll-behavior: none;
   overscroll-behavior-x: none; /* Explicitly prevent horizontal swipe-back on desktop trackpad */
@@ -98,6 +94,7 @@ const InfiniteCanvasWrapper = styled.section`
   perspective: 1000;
   transform: translate3d(0, 0, 0);
   transform: translateZ(0);
+  cursor: grab;
 
   &.is-panning * {
     pointer-events: none;
@@ -163,6 +160,8 @@ const InfiniteCanvas = (props: Props) => {
   const moveSinceZoomRef = useRef<number>(0);
   const zoomStageRef = useRef<0 | 1 | 2>(0); // 0 = no zoom, 1 = full zoom, 2 = intermediate zoom
   const isDraggingRef = useRef<boolean>(false);
+  const dragDistanceRef = useRef<number>(0); // Track total drag distance
+  const zoomBeforeDragRef = useRef<number>(1); // Store zoom level before drag starts
   const [activeTileIndex, setActiveTileIndex] = useState<number | null>(null);
 
   // Per-row horizontal / vertical infinite scrolling state
@@ -444,8 +443,9 @@ const InfiniteCanvas = (props: Props) => {
   };
 
   const handleTileClick = (event: MouseEvent<HTMLDivElement>) => {
-    // Don't trigger click if user was dragging
-    if (isDraggingRef.current) {
+    // Don't trigger click if user was dragging significantly
+    // Allow clicks if drag distance was very small (less than 10px) - this handles iOS tap issues
+    if (isDraggingRef.current && dragDistanceRef.current >= 10) {
       return;
     }
 
@@ -593,8 +593,31 @@ const InfiniteCanvas = (props: Props) => {
       onDragStart: () => {
         // This fires when a pointer/touch drag starts (not wheel)
         isDraggingRef.current = true;
+        dragDistanceRef.current = 0; // Reset drag distance
         if (wrapperRef.current) {
           wrapperRef.current.classList.add("is-dragging");
+        }
+
+        // Store current zoom level and zoom out slightly during drag
+        // Only apply this effect when at the furthest zoom out level (scale = 1)
+        if (zoomLayerRef.current) {
+          const currentZoom = canvasScaleRef.current;
+          zoomBeforeDragRef.current = currentZoom;
+
+          // Only zoom out during drag if we're at the base zoom level (1)
+          // This prevents interference with the auto zoom-out functionality when zoomed in
+          if (currentZoom <= 1) {
+            // Zoom out by 5% (multiply by 0.95)
+            const dragZoomOut = currentZoom * 0.95;
+            canvasScaleRef.current = dragZoomOut;
+
+            gsap.to(zoomLayerRef.current, {
+              scale: dragZoomOut,
+              transformOrigin: "50% 50%",
+              duration: 1,
+              ease: "power2.out",
+            });
+          }
         }
       },
 
@@ -602,10 +625,31 @@ const InfiniteCanvas = (props: Props) => {
         if (wrapperRef.current) {
           wrapperRef.current.classList.remove("is-dragging");
         }
-        // Delay resetting isDraggingRef slightly so that any click event
+
+        // Restore zoom to the level before drag started
+        // Only restore if we applied the zoom-out effect (i.e., we were at scale = 1)
+        if (zoomLayerRef.current) {
+          const restoreZoom = zoomBeforeDragRef.current;
+          const wasAtBaseZoom = restoreZoom <= 1;
+
+          // Only restore if we actually zoomed out during drag
+          if (wasAtBaseZoom && canvasScaleRef.current < restoreZoom) {
+            canvasScaleRef.current = restoreZoom;
+
+            gsap.to(zoomLayerRef.current, {
+              scale: restoreZoom,
+              transformOrigin: "50% 50%",
+              duration: 1,
+              ease: "power2.out",
+            });
+          }
+        }
+
+        // Delay resetting isDraggingRef and dragDistanceRef slightly so that any click event
         // firing immediately after mouseup can see that a drag just happened.
         setTimeout(() => {
           isDraggingRef.current = false;
+          dragDistanceRef.current = 0;
         }, 50);
       },
 
@@ -614,12 +658,60 @@ const InfiniteCanvas = (props: Props) => {
         if (self.event && self.event.preventDefault) {
           self.event.preventDefault();
         }
-        // Explicitly handle wheel events to mark panning (pointer-events: none)
-        // without triggering "is-dragging" (cursor: grabbing).
+
+        // Handle zoom from center of screen
+        if (!zoomLayerRef.current) return;
+
+        // Get viewport dimensions (prefer visualViewport for mobile)
+        const vv = window.visualViewport;
+        const viewportWidth = vv?.width ?? window.innerWidth;
+
+        // Determine zoom direction and amount
+        // Use deltaY for vertical scroll, deltaX for horizontal scroll (trackpad)
+        const scrollDelta =
+          Math.abs(self.deltaY) > Math.abs(self.deltaX)
+            ? -self.deltaY
+            : -self.deltaX;
+
+        // Zoom sensitivity - adjust this value to make zoom faster/slower
+        const zoomSensitivity = 0.001;
+        const zoomDelta = scrollDelta * zoomSensitivity;
+
+        // Get current scale and calculate new scale
+        const currentScale = canvasScaleRef.current;
+        let newScale = currentScale + zoomDelta;
+
+        // Determine max zoom based on device
+        const isMobileViewport = viewportWidth <= 768;
+        const maxZoom = isMobileViewport ? CANVAS_ZOOM_MOBILE : CANVAS_ZOOM;
+        const minZoom = 1;
+
+        // Clamp zoom between min and max
+        newScale = Math.max(minZoom, Math.min(maxZoom, newScale));
+
+        // Only update if scale actually changed
+        if (newScale === currentScale) return;
+
+        // Update scale ref
+        canvasScaleRef.current = newScale;
+
+        // Apply zoom from center of screen
+        const zoomLayer = zoomLayerRef.current;
+        gsap.set(zoomLayer, {
+          scale: newScale,
+          transformOrigin: "50% 50%",
+        });
+
+        // Mark panning for pointer-events
         markPanning();
       },
 
       onChangeX: (self) => {
+        // Only handle drag/touch events, not wheel events (wheel is for zooming)
+        if (self.event.type === "wheel") {
+          return;
+        }
+
         // Prevent browser swipe-back gesture on desktop trackpad when panning horizontally
         if (self.event && self.event.preventDefault) {
           self.event.preventDefault();
@@ -628,16 +720,16 @@ const InfiniteCanvas = (props: Props) => {
         // markPanning acts as a general "activity" indicator for performance
         markPanning();
 
-        const delta =
-          self.event.type === "wheel"
-            ? -self.deltaX * PAN_SENSITIVITY
-            : self.deltaX * 2 * PAN_SENSITIVITY;
+        const delta = self.deltaX * 2 * PAN_SENSITIVITY;
 
         // Update incremental value and use quickTo for smooth animation
         incrXRef.current += delta;
         xTo(incrXRef.current);
 
         const distance = Math.abs(self.deltaX);
+
+        // Track total drag distance for tap detection
+        dragDistanceRef.current += distance;
 
         // Track movement after zoom to trigger staged auto zoom-out.
         if (canvasScaleRef.current > 1) {
@@ -679,6 +771,11 @@ const InfiniteCanvas = (props: Props) => {
         }
       },
       onChangeY: (self) => {
+        // Only handle drag/touch events, not wheel events (wheel is for zooming)
+        if (self.event.type === "wheel") {
+          return;
+        }
+
         // Prevent browser default behaviors when panning vertically
         if (self.event && self.event.preventDefault) {
           self.event.preventDefault();
@@ -686,16 +783,16 @@ const InfiniteCanvas = (props: Props) => {
 
         markPanning();
 
-        const delta =
-          self.event.type === "wheel"
-            ? -self.deltaY * PAN_SENSITIVITY
-            : self.deltaY * 2 * PAN_SENSITIVITY;
+        const delta = self.deltaY * 2 * PAN_SENSITIVITY;
 
         // Update incremental value and use quickTo for smooth animation
         incrYRef.current += delta;
         yTo(incrYRef.current);
 
         const distance = Math.abs(self.deltaY);
+
+        // Track total drag distance for tap detection
+        dragDistanceRef.current += distance;
 
         // Track movement after zoom to trigger staged auto zoom-out.
         if (canvasScaleRef.current > 1) {

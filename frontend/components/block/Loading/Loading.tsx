@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import styled from "styled-components";
 
 const LoadingWrapper = styled(motion.section)`
@@ -36,6 +36,16 @@ const wrapperVariants = {
 
 const Loading = () => {
   const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsActive(false);
+    }, 2500);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, []);
 
   return (
     <AnimatePresence>

@@ -5,11 +5,13 @@ import { MediaType } from "../../../shared/types/types";
 const VideoComponentWrapper = styled.div`
   position: relative;
   overflow: hidden;
+  pointer-events: none;
 
   mux-player {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    pointer-events: none;
   }
 
   mux-player,
