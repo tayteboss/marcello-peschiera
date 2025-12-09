@@ -38,8 +38,8 @@ const VERTICAL_STACKS = 2;
 // Controls horizontal/vertical spacing in vw units so layout scales with viewport.
 // Padding is half the gap for a uniform look at the block edges.
 // Desktop
-const DESKTOP_TILE_GAP_VW = 7;
-const MOBILE_TILE_GAP_VW = 12;
+const DESKTOP_TILE_GAP_VW = 0.5;
+const MOBILE_TILE_GAP_VW = 1;
 
 // Zoom configuration for the entire canvas when a tile is clicked.
 // This scales the whole infinite canvas around the clicked tile.
