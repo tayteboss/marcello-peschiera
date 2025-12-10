@@ -40,12 +40,20 @@ const Loading = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setIsActive(false);
-    }, 2500);
+    }, 1250);
 
     return () => {
       clearTimeout(timer);
     };
   }, []);
+
+  // Notify other parts of the app (e.g. InfiniteCanvas) when the loading
+  // overlay has fully dismissed so they can trigger intro animations.
+  useEffect(() => {
+    if (!isActive && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("loading-complete"));
+    }
+  }, [isActive]);
 
   return (
     <AnimatePresence>

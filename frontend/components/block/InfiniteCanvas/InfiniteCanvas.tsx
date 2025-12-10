@@ -21,30 +21,35 @@ import useMediaQuery from "../../../hooks/useMediaQuery";
 
 gsap.registerPlugin(Observer);
 
-// Base grid configuration (minimums)
-// Desktop defaults
-const DESKTOP_GRID_ROWS = 6;
-const DESKTOP_GRID_COLS = 4;
-
-// Mobile/Tablet defaults (Portrait < 768px)
-const MOBILE_GRID_ROWS = 8; // More rows to cover vertical space
-const MOBILE_GRID_COLS = 2; // Fewer columns for portrait
-
-// How many vertical stacks of rows to render for seamless vertical panning.
-// 2 stacks are usually sufficient to cover the viewport while panning and
-// keep the DOM size smaller than 3 stacks.
-const VERTICAL_STACKS = 2;
-
 // Controls horizontal/vertical spacing in vw units so layout scales with viewport.
 // Padding is half the gap for a uniform look at the block edges.
 // Desktop
 const DESKTOP_TILE_GAP_VW = 0.5;
 const MOBILE_TILE_GAP_VW = 1;
 
-// Zoom configuration for the entire canvas when a tile is clicked.
-// This scales the whole infinite canvas around the clicked tile.
-const CANVAS_ZOOM = 3;
-const CANVAS_ZOOM_MOBILE = 1.5;
+// Zoom configuration for the entire canvas.
+// We support three conceptual levels:
+// - INTRO  (special one-off zoomed-out state while the loader is visible)
+// - MIN    (furthest the user can zoom out during interaction)
+// - DEFAULT (the "normal" viewing level)
+// - MAX    (furthest the user can zoom in, e.g. when a tile is clicked)
+//
+// The current behaviour is that DEFAULT corresponds to 1 (no extra scaling).
+// We allow zooming out slightly below this (MIN) and zooming in above this (MAX).
+// INTRO can go beyond MIN so the opening move can feel more dramatic than what
+// the user can reach later with the trackpad.
+const CANVAS_ZOOM_DEFAULT = 1;
+const CANVAS_ZOOM_MAX = 3;
+const CANVAS_ZOOM_MIN = 0.7;
+
+// Intro-only zoom (further out than MIN). Tweak these values to taste.
+const CANVAS_ZOOM_INTRO = 0.4;
+
+const CANVAS_ZOOM_DEFAULT_MOBILE = 1;
+const CANVAS_ZOOM_MAX_MOBILE = 1.5;
+const CANVAS_ZOOM_MIN_MOBILE = 0.7;
+const CANVAS_ZOOM_INTRO_MOBILE = 0.5;
+
 const CANVAS_ZOOM_DURATION = 1.25;
 const INTERMEDIATE_CANVAS_ZOOM = 1.5;
 
@@ -58,6 +63,11 @@ const SECOND_ZOOM_OUT_THRESHOLD = 2000;
 // currently active tile. This is independent from zoom-out thresholds so we
 // can keep tiles "latched" for shorter movements.
 const ACTIVE_TILE_CLEAR_THRESHOLD = 200;
+
+// Minimum number of tiles we want to show on the canvas. If there are fewer
+// projects than this, we'll deterministically repeat them until we reach this
+// count so the canvas still feels substantial, but without infinite wrapping.
+const MIN_PROJECTS_FOR_CANVAS = 100;
 
 // Lower values make panning feel more sluggish (slower movement for the same input delta).
 // Increase this if you want snappier / faster panning.
@@ -110,17 +120,15 @@ const InfiniteCanvasWrapper = styled.section`
 `;
 
 const InfiniteCanvasInner = styled.div`
-  /* Container for all row wrappers; we position rows absolutely ourselves. */
   position: relative;
-  width: 100%;
-  height: 100%;
+  /* Size is determined by row content so we can derive canvas bounds. */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   will-change: transform;
 `;
 
 const BlockWrapper = styled.div`
-  position: absolute;
-  top: 0;
-  left: 0;
   display: flex;
   flex-direction: row;
   will-change: transform;
@@ -128,6 +136,7 @@ const BlockWrapper = styled.div`
 
 const Block = styled.div<{ $gap: string; $padding: string }>`
   display: flex;
+  justify-content: center;
   padding: ${(props) => props.$padding};
   gap: ${(props) => props.$gap};
 `;
@@ -164,15 +173,31 @@ const InfiniteCanvas = (props: Props) => {
   const zoomBeforeDragRef = useRef<number>(1); // Store zoom level before drag starts
   const [activeTileIndex, setActiveTileIndex] = useState<number | null>(null);
 
-  // Per-row horizontal / vertical infinite scrolling state
-  const blockWrapperRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const rowBlockRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const rowWidthsRef = useRef<number[]>([]);
-  const rowHeightRef = useRef<number>(0);
-
   // Shared world-space offset for the infinite grid. All row positions are
   // derived from this and updated via GSAP for smooth motion.
   const worldOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Track canvas and viewport sizes so we can clamp panning and prevent the
+  // user from dragging too far outside the finite grid.
+  const canvasSizeRef = useRef<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
+  const viewportSizeRef = useRef<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  });
+  const panBoundsRef = useRef<{
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  }>({
+    minX: 0,
+    maxX: 0,
+    minY: 0,
+    maxY: 0,
+  });
 
   // Track how far the user has panned since the current tile became active.
   // Used to clear the active state after enough movement (e.g. 500px).
@@ -195,6 +220,11 @@ const InfiniteCanvas = (props: Props) => {
   const xToRef = useRef<((value: number) => void) | null>(null);
   const yToRef = useRef<((value: number) => void) | null>(null);
 
+  // While the intro zoom animation is playing (after the loading overlay
+  // disappears), we temporarily disable dragging and wheel zoom so the camera
+  // motion feels like a single, uninterrupted move.
+  const isIntroAnimatingRef = useRef<boolean>(true);
+
   const { activeCategories } = useGalleryFilter();
 
   // Derived styling constants based on device
@@ -202,35 +232,31 @@ const InfiniteCanvas = (props: Props) => {
   const tileGap = `${tileGapVw}vw`;
   const tilePadding = `${tileGapVw / 2}vw`;
 
-  // Calculate grid dimensions based on project count and device type.
-  // Mobile: 2 cols, min 8 rows.
-  // Desktop: 4 cols, min 5 rows.
+  // Calculate grid dimensions based on project count so the overall canvas is
+  // roughly square. If there are fewer than MIN_PROJECTS_FOR_CANVAS projects
+  // we deterministically repeat them up to that number, but the grid itself is
+  // still finite – no more infinite wrapping.
   const { gridRows, gridCols, numberOfImages } = useMemo(() => {
     const totalProjects = projects?.length ?? 0;
 
-    const baseRows = isMobile ? MOBILE_GRID_ROWS : DESKTOP_GRID_ROWS;
-    const baseCols = isMobile ? MOBILE_GRID_COLS : DESKTOP_GRID_COLS;
-
-    const minSlots = baseRows * baseCols;
-
-    if (totalProjects <= minSlots) {
+    if (totalProjects === 0) {
       return {
-        gridRows: baseRows,
-        gridCols: baseCols,
-        numberOfImages: minSlots,
+        gridRows: 0,
+        gridCols: 0,
+        numberOfImages: 0,
       };
     }
 
-    // If more projects than slots, increase rows to fit all projects
-    const neededRows = Math.ceil(totalProjects / baseCols);
-    const finalRows = Math.max(baseRows, neededRows);
+    const effectiveCount = Math.max(totalProjects, MIN_PROJECTS_FOR_CANVAS);
+    const cols = Math.ceil(Math.sqrt(effectiveCount));
+    const rows = Math.ceil(effectiveCount / cols);
 
     return {
-      gridRows: finalRows,
-      gridCols: baseCols,
-      numberOfImages: finalRows * baseCols,
+      gridRows: rows,
+      gridCols: cols,
+      numberOfImages: effectiveCount,
     };
-  }, [projects, isMobile]);
+  }, [projects]);
 
   type TileDescriptor = {
     index: number;
@@ -253,8 +279,9 @@ const InfiniteCanvas = (props: Props) => {
     return hash;
   };
 
-  // Build tile descriptors from projects, repeating them to fill the grid.
-  // Falls back to placeholder metadata if there are no projects.
+  // Build tile descriptors from projects, repeating them deterministically to
+  // fill the finite grid. Falls back to placeholder metadata if there are no
+  // projects.
   const tilesWithCategories = useMemo<TileDescriptor[]>(() => {
     if (projects && projects.length > 0) {
       // Deterministically "shuffle" projects based on their id so that
@@ -353,46 +380,13 @@ const InfiniteCanvas = (props: Props) => {
     });
   }, [tilesWithCategories, activeCategories]);
 
-  // Update horizontal position of each row based on a shared world X offset.
-  // This is called continuously by the quickTo animation
-  const updateRowPositions = () => {
-    const worldX = worldOffsetRef.current.x;
-
-    blockWrapperRefs.current.forEach((wrapper, globalIndex) => {
-      const rowIndex = globalIndex % gridRows;
-      const rowWidth = rowWidthsRef.current[rowIndex];
-      if (!wrapper || !rowWidth) return;
-
-      // Wrap the row's offset between -rowWidth and 0 so three repeated blocks
-      // create a seamless infinite horizontal strip.
-      const wrapX = gsap.utils.wrap(-rowWidth, 0);
-      const x = wrapX(worldX);
-
-      gsap.set(wrapper, { x });
-    });
-  };
-
-  // Update vertical position of each row based on a shared world Y offset.
-  // This is called continuously by the quickTo animation
-  const updateVerticalPositions = () => {
-    const rowHeight = rowHeightRef.current;
-
-    if (!rowHeight) return;
-
-    const stackHeight = rowHeight * gridRows;
-    const wrapWorldY = gsap.utils.wrap(-stackHeight, 0);
-    const worldY = wrapWorldY(worldOffsetRef.current.y);
-
-    blockWrapperRefs.current.forEach((wrapper, globalIndex) => {
-      if (!wrapper) return;
-
-      const stackIndex = Math.floor(globalIndex / gridRows);
-      const rowIndex = globalIndex % gridRows;
-
-      const baseY = stackIndex * stackHeight + rowIndex * rowHeight + worldY;
-
-      gsap.set(wrapper, { y: baseY });
-    });
+  // Apply the current world offset as a translation to the entire canvas
+  // container. This replaces the previous per-row wrapping logic so panning is
+  // now finite and the user can reach the actual edges of the grid.
+  const updateCanvasTransform = () => {
+    if (!containerRef.current) return;
+    const { x, y } = worldOffsetRef.current;
+    gsap.set(containerRef.current, { x, y });
   };
 
   const setActiveTile = (index: number | null) => {
@@ -401,41 +395,129 @@ const InfiniteCanvas = (props: Props) => {
     setActiveTileIndex(index);
   };
 
-  // Measure each row's base block width (one pattern repeat per row).
+  // Initial zoom state: render the canvas slightly zoomed out while the loading
+  // overlay is visible so that when it disappears we can animate smoothly into
+  // the default zoom level.
   useEffect(() => {
-    const updateRowWidths = () => {
-      rowWidthsRef.current = rowBlockRefs.current.map((el) =>
-        el ? el.getBoundingClientRect().width : 0
-      );
-      // All rows have the same height, so measure from the first wrapper.
-      const firstWrapper = blockWrapperRefs.current[0];
-      if (firstWrapper) {
-        rowHeightRef.current = firstWrapper.getBoundingClientRect().height;
-      }
+    if (!zoomLayerRef.current) return;
 
-      updateRowPositions();
-      updateVerticalPositions();
+    const vv = window.visualViewport;
+    const viewportWidth = vv?.width ?? window.innerWidth;
+    const isMobileViewport = viewportWidth <= 768;
+
+    // Use the special intro zoom level so the opening move can start much
+    // further out than the normal interactive MIN zoom.
+    const initialZoom = isMobileViewport
+      ? CANVAS_ZOOM_INTRO_MOBILE
+      : CANVAS_ZOOM_INTRO;
+
+    canvasScaleRef.current = initialZoom;
+    gsap.set(zoomLayerRef.current, {
+      scale: initialZoom,
+      transformOrigin: "50% 50%",
+    });
+  }, []);
+  // Track canvas and viewport size so we can derive symmetric panning bounds
+  // and keep the canvas centred on both desktop and mobile.
+  const recalcPanBounds = useCallback(() => {
+    if (!containerRef.current) return;
+
+    const canvasWidth = containerRef.current.scrollWidth;
+    const canvasHeight = containerRef.current.scrollHeight;
+
+    const vv = window.visualViewport;
+
+    // Base viewport size on the wrapper's rendered size so we centre and
+    // bound the canvas relative to the actual canvas area (which may be
+    // smaller than the full window on mobile due to headers, browser chrome,
+    // safe areas, etc.).
+    let viewportWidth = vv?.width ?? window.innerWidth;
+    let viewportHeight = vv?.height ?? window.innerHeight;
+
+    if (wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      viewportWidth = rect.width || viewportWidth;
+      viewportHeight = rect.height || viewportHeight;
+    }
+
+    canvasSizeRef.current = { width: canvasWidth, height: canvasHeight };
+    viewportSizeRef.current = {
+      width: viewportWidth,
+      height: viewportHeight,
     };
 
-    updateRowWidths();
-    window.addEventListener("resize", updateRowWidths);
+    // Margin around the canvas plus an expansion factor so that, even at max
+    // zoom, edge tiles can be brought fully into view and the canvas appears
+    // framed by empty space when panned to a corner.
+    const edgePadding = 120;
+    const PAN_EXPANSION_FACTOR = CANVAS_ZOOM_MAX;
+
+    // Horizontal: symmetric around 0 (worldOffset.x = 0 is centred).
+    const overflowX = Math.max(0, canvasWidth - viewportWidth);
+    const baseHalfX = overflowX / 2 + edgePadding;
+    const halfX = baseHalfX * PAN_EXPANSION_FACTOR;
+    const minX = -halfX;
+    const maxX = halfX;
+
+    // Vertical: symmetric around the offset that centres the canvas vertically.
+    const centreY = (viewportHeight - canvasHeight) / 2;
+    const overflowY = Math.max(0, canvasHeight - viewportHeight);
+    const baseHalfY = overflowY / 2 + edgePadding;
+    const halfY = baseHalfY * PAN_EXPANSION_FACTOR;
+    const minY = centreY - halfY;
+    const maxY = centreY + halfY;
+
+    panBoundsRef.current = { minX, maxX, minY, maxY };
+
+    let nextX = worldOffsetRef.current.x;
+    let nextY = worldOffsetRef.current.y;
+
+    // On first load, start exactly at the visual centre of the canvas so the
+    // intro zoom lands in the middle for both desktop and mobile.
+    if (nextX === 0 && nextY === 0) {
+      nextX = 0;
+      nextY = centreY;
+    }
+
+    nextX = gsap.utils.clamp(minX, maxX, nextX);
+    nextY = gsap.utils.clamp(minY, maxY, nextY);
+
+    worldOffsetRef.current.x = nextX;
+    worldOffsetRef.current.y = nextY;
+
+    // Keep the incremental targets in sync so quickTo animations continue
+    // smoothly from the current centred position.
+    incrXRef.current = nextX;
+    incrYRef.current = nextY;
+
+    updateCanvasTransform();
+  }, [gridRows, gridCols, numberOfImages]);
+
+  useEffect(() => {
+    recalcPanBounds();
+
+    const handleResize = () => {
+      recalcPanBounds();
+    };
+
+    window.addEventListener("resize", handleResize);
 
     return () => {
-      window.removeEventListener("resize", updateRowWidths);
+      window.removeEventListener("resize", handleResize);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gridRows, numberOfImages, isMobile]); // Re-measure when grid structure or mobile state changes
+  }, [recalcPanBounds]);
 
   const zoomOutCanvas = () => {
-    if (!zoomLayerRef.current || canvasScaleRef.current === 1) return;
+    if (!zoomLayerRef.current || canvasScaleRef.current === CANVAS_ZOOM_DEFAULT)
+      return;
 
-    canvasScaleRef.current = 1;
+    canvasScaleRef.current = CANVAS_ZOOM_DEFAULT;
     moveSinceZoomRef.current = 0;
     zoomStageRef.current = 0;
     setActiveTile(null);
 
     gsap.to(zoomLayerRef.current, {
-      scale: 1,
+      scale: CANVAS_ZOOM_DEFAULT,
       transformOrigin: "50% 50%",
       duration: CANVAS_ZOOM_DURATION,
       ease: "power3.out",
@@ -482,8 +564,16 @@ const InfiniteCanvas = (props: Props) => {
     const deltaX = (viewportCenterX - tileCenterX) / currentScale;
     const deltaY = (viewportCenterY - tileCenterY) / currentScale;
 
-    const targetWorldX = worldOffsetRef.current.x + deltaX;
-    const targetWorldY = worldOffsetRef.current.y + deltaY;
+    let targetWorldX = worldOffsetRef.current.x + deltaX;
+    let targetWorldY = worldOffsetRef.current.y + deltaY;
+
+    // Clamp the target "camera" position into our panning bounds so
+    // centering a tile never sends the canvas off into empty space, while still
+    // allowing tiles at the very edges of the canvas to be brought fully into
+    // view, even at maximum zoom.
+    const { minX, maxX, minY, maxY } = panBoundsRef.current;
+    targetWorldX = gsap.utils.clamp(minX, maxX, targetWorldX);
+    targetWorldY = gsap.utils.clamp(minY, maxY, targetWorldY);
 
     // Update incremental refs to match the target
     // Calculate the delta needed to reach target from current incremental position
@@ -506,8 +596,7 @@ const InfiniteCanvas = (props: Props) => {
         duration: CANVAS_ZOOM_DURATION,
         ease: "power3.out",
         onUpdate: () => {
-          updateRowPositions();
-          updateVerticalPositions();
+          updateCanvasTransform();
         },
       });
     }
@@ -522,8 +611,8 @@ const InfiniteCanvas = (props: Props) => {
     const viewportWidthForZoom = vvForZoom?.width ?? window.innerWidth;
     const isMobileViewportForZoom = viewportWidthForZoom <= 768;
     const targetZoom = isMobileViewportForZoom
-      ? CANVAS_ZOOM_MOBILE
-      : CANVAS_ZOOM;
+      ? CANVAS_ZOOM_MAX_MOBILE
+      : CANVAS_ZOOM_MAX;
     canvasScaleRef.current = targetZoom;
     moveSinceZoomRef.current = 0;
     zoomStageRef.current = 1;
@@ -554,10 +643,9 @@ const InfiniteCanvas = (props: Props) => {
     xToRef.current = xTo;
     yToRef.current = yTo;
 
-    // Use a ticker to continuously update row positions during smooth animation
+    // Use a ticker to continuously update the canvas position during smooth animation
     const ticker = gsap.ticker.add(() => {
-      updateRowPositions();
-      updateVerticalPositions();
+      updateCanvasTransform();
     });
 
     const markPanning = () => {
@@ -591,6 +679,12 @@ const InfiniteCanvas = (props: Props) => {
       dragMinimum: DRAG_THRESHOLD, // Using our defined threshold (1px)
 
       onDragStart: () => {
+        // Disable dragging during the intro zoom so the camera motion feels
+        // like a single uninterrupted move.
+        if (isIntroAnimatingRef.current) {
+          return;
+        }
+
         // This fires when a pointer/touch drag starts (not wheel)
         isDraggingRef.current = true;
         dragDistanceRef.current = 0; // Reset drag distance
@@ -654,6 +748,10 @@ const InfiniteCanvas = (props: Props) => {
       },
 
       onWheel: (self) => {
+        // Disable wheel zoom during the intro zoom animation.
+        if (isIntroAnimatingRef.current) {
+          return;
+        }
         // Prevent browser default behaviors (including swipe-back) on wheel/trackpad gestures
         if (self.event && self.event.preventDefault) {
           self.event.preventDefault();
@@ -681,10 +779,14 @@ const InfiniteCanvas = (props: Props) => {
         const currentScale = canvasScaleRef.current;
         let newScale = currentScale + zoomDelta;
 
-        // Determine max zoom based on device
+        // Determine min/max zoom based on device
         const isMobileViewport = viewportWidth <= 768;
-        const maxZoom = isMobileViewport ? CANVAS_ZOOM_MOBILE : CANVAS_ZOOM;
-        const minZoom = 1;
+        const maxZoom = isMobileViewport
+          ? CANVAS_ZOOM_MAX_MOBILE
+          : CANVAS_ZOOM_MAX;
+        const minZoom = isMobileViewport
+          ? CANVAS_ZOOM_MIN_MOBILE
+          : CANVAS_ZOOM_MIN;
 
         // Clamp zoom between min and max
         newScale = Math.max(minZoom, Math.min(maxZoom, newScale));
@@ -707,6 +809,10 @@ const InfiniteCanvas = (props: Props) => {
       },
 
       onChangeX: (self) => {
+        // Disable horizontal panning while the intro zoom is animating.
+        if (isIntroAnimatingRef.current) {
+          return;
+        }
         // Only handle drag/touch events, not wheel events (wheel is for zooming)
         if (self.event.type === "wheel") {
           return;
@@ -722,8 +828,13 @@ const InfiniteCanvas = (props: Props) => {
 
         const delta = self.deltaX * 2 * PAN_SENSITIVITY;
 
-        // Update incremental value and use quickTo for smooth animation
+        // Update incremental value and use quickTo for smooth animation,
+        // clamping the target into our finite pan bounds.
         incrXRef.current += delta;
+
+        const { minX, maxX } = panBoundsRef.current;
+
+        incrXRef.current = gsap.utils.clamp(minX, maxX, incrXRef.current);
         xTo(incrXRef.current);
 
         const distance = Math.abs(self.deltaX);
@@ -771,6 +882,10 @@ const InfiniteCanvas = (props: Props) => {
         }
       },
       onChangeY: (self) => {
+        // Disable vertical panning while the intro zoom is animating.
+        if (isIntroAnimatingRef.current) {
+          return;
+        }
         // Only handle drag/touch events, not wheel events (wheel is for zooming)
         if (self.event.type === "wheel") {
           return;
@@ -785,8 +900,13 @@ const InfiniteCanvas = (props: Props) => {
 
         const delta = self.deltaY * 2 * PAN_SENSITIVITY;
 
-        // Update incremental value and use quickTo for smooth animation
+        // Update incremental value and use quickTo for smooth animation,
+        // clamping the target into our finite pan bounds.
         incrYRef.current += delta;
+
+        const { minY, maxY } = panBoundsRef.current;
+
+        incrYRef.current = gsap.utils.clamp(minY, maxY, incrYRef.current);
         yTo(incrYRef.current);
 
         const distance = Math.abs(self.deltaY);
@@ -844,8 +964,66 @@ const InfiniteCanvas = (props: Props) => {
     };
   }, [gridRows]);
 
+  // When the loading overlay has finished its intro and fades out, smoothly
+  // zoom from the initial \"far\" zoom into our default zoom level so the user
+  // lands in a natural viewing state.
+  useEffect(() => {
+    const handleLoadingComplete = () => {
+      if (!zoomLayerRef.current) return;
+
+      const vv = window.visualViewport;
+      const viewportWidth = vv?.width ?? window.innerWidth;
+      const isMobileViewport = viewportWidth <= 768;
+
+      const defaultZoom = isMobileViewport
+        ? CANVAS_ZOOM_DEFAULT_MOBILE
+        : CANVAS_ZOOM_DEFAULT;
+
+      // Block user panning/zooming while this intro animation runs.
+      isIntroAnimatingRef.current = true;
+
+      gsap.to(zoomLayerRef.current, {
+        scale: defaultZoom,
+        transformOrigin: "50% 50%",
+        duration: 2,
+        delay: 0,
+        ease: "power3.out",
+        onComplete: () => {
+          canvasScaleRef.current = defaultZoom;
+          moveSinceZoomRef.current = 0;
+          zoomStageRef.current = 0;
+          isIntroAnimatingRef.current = false;
+
+          // After the intro zoom finishes, recenter the camera using the
+          // latest canvas and viewport measurements so that the user always
+          // lands in the exact middle of the canvas (especially important on
+          // mobile where the viewport can change as chrome hides).
+          worldOffsetRef.current.x = 0;
+          worldOffsetRef.current.y = 0;
+          recalcPanBounds();
+        },
+      });
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("loading-complete", handleLoadingComplete);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("loading-complete", handleLoadingComplete);
+      }
+    };
+  }, []);
+
   const handleTileClickWrapper = useCallback(
     (event: MouseEvent<HTMLDivElement>, tileIndex: number) => {
+      // Ignore tile clicks during the intro zoom animation to avoid fighting
+      // with the initial camera move.
+      if (isIntroAnimatingRef.current) {
+        return;
+      }
+
       const isActive = tileIndex === activeTileIndexRef.current;
 
       // If the same tile is clicked while zoomed in, clear active
@@ -863,81 +1041,44 @@ const InfiniteCanvas = (props: Props) => {
     []
   );
 
-  const renderRowContent = (
-    stackIndex: number,
-    rowIndex: number,
-    instanceIndex: number,
-    blockRef?: (el: HTMLDivElement | null) => void
-  ) => {
-    const startIndex = rowIndex * gridCols;
-    const endIndex = startIndex + gridCols;
-    const rowTiles = tilesWithVisibility.slice(startIndex, endIndex);
-
-    return (
-      <Block
-        aria-hidden={instanceIndex !== 0}
-        ref={blockRef}
-        $gap={tileGap}
-        $padding={tilePadding}
-      >
-        {rowTiles.map((tile) => {
-          const instanceId = `stack-${stackIndex}-inst-${instanceIndex}-row-${rowIndex}-${tile.index}`;
-          const isActive = activeTileIndex === tile.index;
-
-          return (
-            <InfiniteCanvasTile
-              key={instanceId}
-              tileIndex={tile.index}
-              index={tile.index}
-              category={tile.category}
-              aspectRatio={tile.aspectRatio}
-              isVisible={tile.isVisible}
-              isActive={isActive}
-              media={tile.project?.media}
-              title={tile.project?.title}
-              aspectPadding={tile.aspectPadding}
-              widthFactor={tile.widthFactor}
-              onClick={handleTileClickWrapper}
-              onMouseDown={() => {}}
-              isMobile={isMobile}
-            />
-          );
-        })}
-      </Block>
-    );
-  };
-
   return (
     <InfiniteCanvasWrapper ref={wrapperRef}>
       <ZoomLayer ref={zoomLayerRef}>
         <InfiniteCanvasInner ref={containerRef}>
-          {Array.from({ length: VERTICAL_STACKS }, (_, stackIndex) =>
-            Array.from({ length: gridRows }, (_, rowIndex) => {
-              const globalIndex = stackIndex * gridRows + rowIndex;
+          {Array.from({ length: gridRows }, (_, rowIndex) => {
+            const startIndex = rowIndex * gridCols;
+            const endIndex = startIndex + gridCols;
+            const rowTiles = tilesWithVisibility.slice(startIndex, endIndex);
 
-              return (
-                <BlockWrapper
-                  key={`stack-${stackIndex}-row-${rowIndex}`}
-                  ref={(el) => {
-                    blockWrapperRefs.current[globalIndex] = el;
-                  }}
-                >
-                  {renderRowContent(
-                    stackIndex,
-                    rowIndex,
-                    0,
-                    stackIndex === 0
-                      ? (el) => {
-                          rowBlockRefs.current[rowIndex] = el;
-                        }
-                      : undefined
-                  )}
-                  {renderRowContent(stackIndex, rowIndex, 1)}
-                  {renderRowContent(stackIndex, rowIndex, 2)}
-                </BlockWrapper>
-              );
-            })
-          )}
+            return (
+              <BlockWrapper key={`row-${rowIndex}`}>
+                <Block $gap={tileGap} $padding={tilePadding}>
+                  {rowTiles.map((tile) => {
+                    const isActive = activeTileIndex === tile.index;
+
+                    return (
+                      <InfiniteCanvasTile
+                        key={`row-${rowIndex}-tile-${tile.index}`}
+                        tileIndex={tile.index}
+                        index={tile.index}
+                        category={tile.category}
+                        aspectRatio={tile.aspectRatio}
+                        isVisible={tile.isVisible}
+                        isActive={isActive}
+                        media={tile.project?.media}
+                        title={tile.project?.title}
+                        aspectPadding={tile.aspectPadding}
+                        widthFactor={tile.widthFactor}
+                        onClick={handleTileClickWrapper}
+                        onMouseDown={() => {}}
+                        isMobile={isMobile}
+                      />
+                    );
+                  })}
+                </Block>
+              </BlockWrapper>
+            );
+          })}
         </InfiniteCanvasInner>
       </ZoomLayer>
     </InfiniteCanvasWrapper>
