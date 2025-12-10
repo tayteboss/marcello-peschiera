@@ -1,6 +1,9 @@
 export type MediaType = {
   mediaType: "video" | "image";
-  video: { asset: { playbackId: string } };
+  video?: {
+    asset?: { playbackId?: string };
+    videoLink?: string;
+  };
   image: {
     asset: {
       url: string;

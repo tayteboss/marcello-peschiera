@@ -308,7 +308,20 @@ const InfiniteCanvas = (props: Props) => {
           let aspectPadding: string | undefined;
           let widthFactor = 1;
 
-          if (dimensions) {
+          const isVideoLink =
+            project.media?.mediaType === "video" &&
+            !!project.media?.video?.videoLink;
+
+          if (isVideoLink) {
+            // For external video links (YouTube/Vimeo), force a 16:9 tile so the
+            // visual ratio is based on the video itself rather than any
+            // thumbnail image metadata.
+            const ar = 16 / 9;
+            widthFactor = ar;
+            aspectRatio = "16 / 9";
+            // padding-top uses height / width * 100
+            aspectPadding = `${(1 / ar) * 100}%`;
+          } else if (dimensions) {
             // Sanity's aspectRatio is width / height. Trust it when present.
             const ar =
               dimensions.aspectRatio && dimensions.aspectRatio > 0

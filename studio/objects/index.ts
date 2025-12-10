@@ -74,6 +74,14 @@ const mediaBlock = [
         hidden: ({parent}: any) => parent?.mediaType !== 'video',
       },
       {
+        title: 'Video Link (YouTube or Vimeo)',
+        name: 'videoLink',
+        type: 'url',
+        description:
+          'If not using a video file. Paste a full YouTube or Vimeo URL, for example: https://www.youtube.com/watch?v=VIDEO_ID or https://vimeo.com/VIDEO_ID',
+        hidden: ({parent}: any) => parent?.mediaType !== 'video',
+      },
+      {
         ...imageObject,
         title: 'Thumbnail Image',
         name: 'thumbnailImage',

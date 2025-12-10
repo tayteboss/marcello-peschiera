@@ -61,18 +61,20 @@ export const mediaString = `
 				alt
 			}
 		),
-		"video": coalesce(
-			media.video{
-				asset-> {
+		"video": {
+			"asset": coalesce(
+				media.video.asset-> {
 					playbackId,
 				},
-			},
-			media.media.video{
-				asset-> {
+				media.media.video.asset-> {
 					playbackId,
-				},
-			}
-		)
+				}
+			),
+			"videoLink": coalesce(
+				media.videoLink,
+				media.media.videoLink
+			)
+		}
 	}
 `;
 
