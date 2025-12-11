@@ -59,6 +59,8 @@ export const GlobalStyles = createGlobalStyle`
 	body {
 		position: relative;
 
+		transition: background 50ms var(--transition-ease);
+
 		&.light-mode {
 			.info-modal-wrapper {
 				background: rgba(221, 255, 0, 0.6);
@@ -77,6 +79,10 @@ export const GlobalStyles = createGlobalStyle`
 					color: var(--colour-dark);
 				}
 			}
+		}
+
+		&.remove-duotone {
+			background: var(--colour-black);
 		}
 	}
 

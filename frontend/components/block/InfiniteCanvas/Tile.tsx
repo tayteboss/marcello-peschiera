@@ -182,9 +182,6 @@ export const InfiniteCanvasTile = memo(
       >
         <TileInner
           $isActive={isActive}
-          // Mirror the global `.remove-duotone` behaviour locally: when a tile
-          // is high-res active (hovered or clicked), fade out the duotone base
-          // layer and reveal the high-res image/video layer.
           className={isHighResOn ? "remove-duotone" : undefined}
         >
           {media ? (

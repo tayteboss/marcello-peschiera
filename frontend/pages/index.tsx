@@ -46,10 +46,18 @@ export async function getStaticProps() {
     client.fetch(projectsQueryString),
   ]);
 
+  const projects = (projectsResult ?? []) as ProjectType[];
+
+  // Fisher-Yates shuffle
+  for (let i = projects.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [projects[i], projects[j]] = [projects[j], projects[i]];
+  }
+
   return {
     props: {
       siteSettings: (siteSettingsResult ?? {}) as SiteSettingsType,
-      projects: (projectsResult ?? []) as ProjectType[],
+      projects: projects,
     },
   };
 }

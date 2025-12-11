@@ -56,13 +56,13 @@ const INTERMEDIATE_CANVAS_ZOOM = 1.5;
 // Staged zoom-out thresholds (approx px of user movement after zoom).
 // After FIRST_ZOOM_OUT_THRESHOLD, zoom out to INTERMEDIATE_CANVAS_ZOOM.
 // After SECOND_ZOOM_OUT_THRESHOLD, zoom out fully to 1.
-const FIRST_ZOOM_OUT_THRESHOLD = 500;
-const SECOND_ZOOM_OUT_THRESHOLD = 2000;
+const FIRST_ZOOM_OUT_THRESHOLD = 100;
+const SECOND_ZOOM_OUT_THRESHOLD = 300;
 
 // How far the user can pan (in px of cumulative movement) before we clear the
 // currently active tile. This is independent from zoom-out thresholds so we
 // can keep tiles "latched" for shorter movements.
-const ACTIVE_TILE_CLEAR_THRESHOLD = 200;
+const ACTIVE_TILE_CLEAR_THRESHOLD = 100;
 
 // Minimum number of tiles we want to show on the canvas. If there are fewer
 // projects than this, we'll deterministically repeat them until we reach this
@@ -225,6 +225,11 @@ const InfiniteCanvas = (props: Props) => {
   // motion feels like a single, uninterrupted move.
   const isIntroAnimatingRef = useRef<boolean>(true);
 
+  // Also track whenever we are programmatically animating the camera (zooming
+  // in to a tile or zooming out) to prevent user interactions from conflicting
+  // with the automatic movement.
+  const isTileAnimatingRef = useRef<boolean>(false);
+
   const { activeCategories } = useGalleryFilter();
 
   // Derived styling constants based on device
@@ -284,16 +289,8 @@ const InfiniteCanvas = (props: Props) => {
   // projects.
   const tilesWithCategories = useMemo<TileDescriptor[]>(() => {
     if (projects && projects.length > 0) {
-      // Deterministically "shuffle" projects based on their id so that
-      // server and client renders match (avoiding hydration issues) while
-      // still giving a pseudo-random distribution.
-      const shuffledProjects = [...projects].sort((a, b) => {
-        const ha = stableHash(a._id);
-        const hb = stableHash(b._id);
-        return ha - hb;
-      });
-
-      const baseTiles: Omit<TileDescriptor, "index">[] = shuffledProjects.map(
+      // Map projects to tiles first
+      const baseTiles: Omit<TileDescriptor, "index">[] = projects.map(
         (project) => {
           const category = mapProjectTypeToFilterCategory(project.type);
 
@@ -348,21 +345,37 @@ const InfiniteCanvas = (props: Props) => {
         }
       );
 
-      const tiles: TileDescriptor[] = [];
+      // Expand to fill the grid (repeating the projects list)
+      let allTiles: Omit<TileDescriptor, "index">[] = [];
+      while (allTiles.length < numberOfImages) {
+        allTiles = [...allTiles, ...baseTiles];
+      }
+      // Trim to exact size
+      allTiles = allTiles.slice(0, numberOfImages);
 
-      for (let index = 0; index < numberOfImages; index += 1) {
-        const source = baseTiles[index % baseTiles.length];
-        tiles.push({
-          index,
-          category: source.category,
-          aspectRatio: source.aspectRatio,
-          project: source.project,
-          aspectPadding: source.aspectPadding,
-          widthFactor: source.widthFactor,
-        });
+      // Shuffle the expanded list deterministically so the pattern of repetition
+      // is broken up, but the result is consistent across hydration.
+      // Using a simple LCG seeded with a constant.
+      let seed = 42;
+      const m = 0x80000000;
+      const a = 1103515245;
+      const c = 12345;
+      const nextFloat = () => {
+        seed = (a * seed + c) % m;
+        return seed / (m - 1);
+      };
+
+      // Fisher-Yates shuffle on the full list
+      for (let i = allTiles.length - 1; i > 0; i--) {
+        const j = Math.floor(nextFloat() * (i + 1));
+        [allTiles[i], allTiles[j]] = [allTiles[j], allTiles[i]];
       }
 
-      return tiles;
+      // Assign indices
+      return allTiles.map((tile, index) => ({
+        ...tile,
+        index,
+      }));
     }
 
     // Placeholder behaviour if there are no projects
@@ -430,13 +443,71 @@ const InfiniteCanvas = (props: Props) => {
       transformOrigin: "50% 50%",
     });
   }, []);
+  // Helper to calculate panning bounds based on zoom level.
+  // This ensures that as we zoom in, the user can pan further to reach the edges.
+  const getPanBounds = useCallback((scale: number) => {
+    const { width: canvasWidth, height: canvasHeight } = canvasSizeRef.current;
+    const { width: viewportWidth, height: viewportHeight } =
+      viewportSizeRef.current;
+
+    // Add padding (approx 10vw / 10vh) so we can always pan to the edge
+    const padX = viewportWidth * 0.1;
+    const padY = viewportHeight * 0.1;
+
+    // X Axis
+    const visualWidth = canvasWidth * scale;
+
+    // Calculate overflow considering padding
+    // We want to allow panning until the edge is padX inside/outside the viewport
+    // Formula: Max Offset = (VisualWidth - ViewportWidth + 2 * Padding) / (2 * Scale)
+    // This allows panning past the edge by padX/scale in unscaled units
+    // Ensure halfX is at least 0 to prevent minX > maxX when content fits in viewport
+    const halfX = Math.max(
+      0,
+      (visualWidth - viewportWidth + 2 * padX) / (2 * scale)
+    );
+    const minX = -halfX;
+    const maxX = halfX;
+
+    // Y Axis
+    // Calculate vertical bounds allowing for padding
+    // MaxY (pulling down) -> Visual Top moves to padY
+    const maxY = viewportHeight / 2 + (padY - viewportHeight / 2) / scale;
+
+    // MinY (pulling up) -> Visual Bottom moves to ViewportHeight - padY
+    const minY =
+      viewportHeight / 2 + (viewportHeight / 2 - padY) / scale - canvasHeight;
+
+    return { minX, maxX, minY, maxY };
+  }, []);
+
   // Track canvas and viewport size so we can derive symmetric panning bounds
   // and keep the canvas centred on both desktop and mobile.
   const recalcPanBounds = useCallback(() => {
     if (!containerRef.current) return;
 
-    const canvasWidth = containerRef.current.scrollWidth;
-    const canvasHeight = containerRef.current.scrollHeight;
+    // Measure content width correctly by checking children (rows).
+    // InfiniteCanvasInner centers content, so container.scrollWidth might not
+    // reflect the full width if content overflows to the left (which is clipped/ignored in measurements).
+    let contentWidth = containerRef.current.scrollWidth;
+    const contentHeight = containerRef.current.scrollHeight;
+
+    const children = containerRef.current.children;
+    if (children.length > 0) {
+      let maxChildWidth = 0;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i] as HTMLElement;
+        // Use offsetWidth to get the rendered width of the row
+        maxChildWidth = Math.max(maxChildWidth, child.offsetWidth);
+      }
+      // If rows are wider than what the container reports, use that
+      if (maxChildWidth > contentWidth) {
+        contentWidth = maxChildWidth;
+      }
+    }
+
+    const canvasWidth = contentWidth;
+    const canvasHeight = contentHeight;
 
     const vv = window.visualViewport;
 
@@ -459,26 +530,9 @@ const InfiniteCanvas = (props: Props) => {
       height: viewportHeight,
     };
 
-    // Margin around the canvas plus an expansion factor so that, even at max
-    // zoom, edge tiles can be brought fully into view and the canvas appears
-    // framed by empty space when panned to a corner.
-    const edgePadding = 120;
-    const PAN_EXPANSION_FACTOR = CANVAS_ZOOM_MAX;
-
-    // Horizontal: symmetric around 0 (worldOffset.x = 0 is centred).
-    const overflowX = Math.max(0, canvasWidth - viewportWidth);
-    const baseHalfX = overflowX / 2 + edgePadding;
-    const halfX = baseHalfX * PAN_EXPANSION_FACTOR;
-    const minX = -halfX;
-    const maxX = halfX;
-
-    // Vertical: symmetric around the offset that centres the canvas vertically.
-    const centreY = (viewportHeight - canvasHeight) / 2;
-    const overflowY = Math.max(0, canvasHeight - viewportHeight);
-    const baseHalfY = overflowY / 2 + edgePadding;
-    const halfY = baseHalfY * PAN_EXPANSION_FACTOR;
-    const minY = centreY - halfY;
-    const maxY = centreY + halfY;
+    // Calculate bounds based on current scale
+    const currentScale = canvasScaleRef.current || 1;
+    const { minX, maxX, minY, maxY } = getPanBounds(currentScale);
 
     panBoundsRef.current = { minX, maxX, minY, maxY };
 
@@ -489,7 +543,7 @@ const InfiniteCanvas = (props: Props) => {
     // intro zoom lands in the middle for both desktop and mobile.
     if (nextX === 0 && nextY === 0) {
       nextX = 0;
-      nextY = centreY;
+      nextY = (viewportHeight - canvasHeight) / 2;
     }
 
     nextX = gsap.utils.clamp(minX, maxX, nextX);
@@ -504,7 +558,7 @@ const InfiniteCanvas = (props: Props) => {
     incrYRef.current = nextY;
 
     updateCanvasTransform();
-  }, [gridRows, gridCols, numberOfImages]);
+  }, [getPanBounds, gridRows, gridCols, numberOfImages]);
 
   useEffect(() => {
     recalcPanBounds();
@@ -580,11 +634,16 @@ const InfiniteCanvas = (props: Props) => {
     let targetWorldX = worldOffsetRef.current.x + deltaX;
     let targetWorldY = worldOffsetRef.current.y + deltaY;
 
-    // Clamp the target "camera" position into our panning bounds so
-    // centering a tile never sends the canvas off into empty space, while still
-    // allowing tiles at the very edges of the canvas to be brought fully into
-    // view, even at maximum zoom.
-    const { minX, maxX, minY, maxY } = panBoundsRef.current;
+    // Calculate target zoom early to determine appropriate bounds
+    const vvForZoom = window.visualViewport;
+    const viewportWidthForZoom = vvForZoom?.width ?? window.innerWidth;
+    const isMobileViewportForZoom = viewportWidthForZoom <= 768;
+    const targetZoom = isMobileViewportForZoom
+      ? CANVAS_ZOOM_MAX_MOBILE
+      : CANVAS_ZOOM_MAX;
+
+    // Clamp the target "camera" position into our panning bounds for the TARGET zoom level
+    const { minX, maxX, minY, maxY } = getPanBounds(targetZoom);
     targetWorldX = gsap.utils.clamp(minX, maxX, targetWorldX);
     targetWorldY = gsap.utils.clamp(minY, maxY, targetWorldY);
 
@@ -597,35 +656,25 @@ const InfiniteCanvas = (props: Props) => {
     incrYRef.current += deltaIncrY;
 
     // Smoothly animate the "camera" so the clicked tile moves to center
-    // Use quickTo for consistency with panning - it will smoothly animate to the target
-    if (xToRef.current && yToRef.current) {
-      xToRef.current(targetWorldX);
-      yToRef.current(targetWorldY);
-    } else {
-      // Fallback to gsap.to if quickTo not initialized yet
-      gsap.to(worldOffsetRef.current, {
-        x: targetWorldX,
-        y: targetWorldY,
-        duration: CANVAS_ZOOM_DURATION,
-        ease: "power3.out",
-        onUpdate: () => {
-          updateCanvasTransform();
-        },
-      });
-    }
+    // Use gsap.to explicitly to match the scale animation duration and easing,
+    // avoiding the "snap" effect caused by mismatched quickTo configuration.
+
+    // Block interactions during the animation
+    isTileAnimatingRef.current = true;
+
+    gsap.to(worldOffsetRef.current, {
+      x: targetWorldX,
+      y: targetWorldY,
+      duration: CANVAS_ZOOM_DURATION,
+      ease: "power3.out",
+      onComplete: () => {
+        isTileAnimatingRef.current = false;
+      },
+    });
 
     // Then zoom the entire canvas (wrapper) around the viewport center.
     // Because the tile is already centered in the viewport, scaling around
     // the viewport center keeps that tile centered while everything grows.
-    // Use the *current* viewport width to decide mobile vs desktop zoom instead
-    // of relying on a React hook value that might lag orientation/device
-    // changes (especially in dev tools).
-    const vvForZoom = window.visualViewport;
-    const viewportWidthForZoom = vvForZoom?.width ?? window.innerWidth;
-    const isMobileViewportForZoom = viewportWidthForZoom <= 768;
-    const targetZoom = isMobileViewportForZoom
-      ? CANVAS_ZOOM_MAX_MOBILE
-      : CANVAS_ZOOM_MAX;
     canvasScaleRef.current = targetZoom;
     moveSinceZoomRef.current = 0;
     zoomStageRef.current = 1;
@@ -694,7 +743,7 @@ const InfiniteCanvas = (props: Props) => {
       onDragStart: () => {
         // Disable dragging during the intro zoom so the camera motion feels
         // like a single uninterrupted move.
-        if (isIntroAnimatingRef.current) {
+        if (isIntroAnimatingRef.current || isTileAnimatingRef.current) {
           return;
         }
 
@@ -762,7 +811,7 @@ const InfiniteCanvas = (props: Props) => {
 
       onWheel: (self) => {
         // Disable wheel zoom during the intro zoom animation.
-        if (isIntroAnimatingRef.current) {
+        if (isIntroAnimatingRef.current || isTileAnimatingRef.current) {
           return;
         }
         // Prevent browser default behaviors (including swipe-back) on wheel/trackpad gestures
@@ -823,7 +872,7 @@ const InfiniteCanvas = (props: Props) => {
 
       onChangeX: (self) => {
         // Disable horizontal panning while the intro zoom is animating.
-        if (isIntroAnimatingRef.current) {
+        if (isIntroAnimatingRef.current || isTileAnimatingRef.current) {
           return;
         }
         // Only handle drag/touch events, not wheel events (wheel is for zooming)
@@ -845,7 +894,13 @@ const InfiniteCanvas = (props: Props) => {
         // clamping the target into our finite pan bounds.
         incrXRef.current += delta;
 
-        const { minX, maxX } = panBoundsRef.current;
+        // Use current visual scale for bounds to prevent snapping during zoom-out animation
+        const currentScale = zoomLayerRef.current
+          ? (gsap.getProperty(zoomLayerRef.current, "scale") as number)
+          : canvasScaleRef.current;
+
+        // Use dynamic bounds based on current zoom level
+        const { minX, maxX } = getPanBounds(currentScale);
 
         incrXRef.current = gsap.utils.clamp(minX, maxX, incrXRef.current);
         xTo(incrXRef.current);
@@ -896,7 +951,7 @@ const InfiniteCanvas = (props: Props) => {
       },
       onChangeY: (self) => {
         // Disable vertical panning while the intro zoom is animating.
-        if (isIntroAnimatingRef.current) {
+        if (isIntroAnimatingRef.current || isTileAnimatingRef.current) {
           return;
         }
         // Only handle drag/touch events, not wheel events (wheel is for zooming)
@@ -917,7 +972,13 @@ const InfiniteCanvas = (props: Props) => {
         // clamping the target into our finite pan bounds.
         incrYRef.current += delta;
 
-        const { minY, maxY } = panBoundsRef.current;
+        // Use current visual scale for bounds to prevent snapping during zoom-out animation
+        const currentScale = zoomLayerRef.current
+          ? (gsap.getProperty(zoomLayerRef.current, "scale") as number)
+          : canvasScaleRef.current;
+
+        // Use dynamic bounds based on current zoom level
+        const { minY, maxY } = getPanBounds(currentScale);
 
         incrYRef.current = gsap.utils.clamp(minY, maxY, incrYRef.current);
         yTo(incrYRef.current);
@@ -1011,8 +1072,11 @@ const InfiniteCanvas = (props: Props) => {
           // latest canvas and viewport measurements so that the user always
           // lands in the exact middle of the canvas (especially important on
           // mobile where the viewport can change as chrome hides).
-          worldOffsetRef.current.x = 0;
-          worldOffsetRef.current.y = 0;
+          // We intentionally do NOT force worldOffset to 0,0 here because that
+          // would trigger the "first load" centering logic in recalcPanBounds,
+          // causing a visual snap if the viewport height has changed (mobile URL bar).
+          // Instead, we just let recalcPanBounds clamp the *existing* position
+          // to the new bounds, which is smoother.
           recalcPanBounds();
         },
       });
@@ -1033,20 +1097,21 @@ const InfiniteCanvas = (props: Props) => {
     (event: MouseEvent<HTMLDivElement>, tileIndex: number) => {
       // Ignore tile clicks during the intro zoom animation to avoid fighting
       // with the initial camera move.
-      if (isIntroAnimatingRef.current) {
+      if (isIntroAnimatingRef.current || isTileAnimatingRef.current) {
         return;
       }
 
+      // Check if the clicked tile is already active
       const isActive = tileIndex === activeTileIndexRef.current;
 
-      // If the same tile is clicked while zoomed in, clear active
-      // state and zoom back out to the default level.
+      // If active and zoomed in, zoom out and clear active state
       if (isActive && canvasScaleRef.current > 1) {
         setActiveTile(null);
         zoomOutCanvas();
         return;
       }
 
+      // Otherwise, set active and zoom in
       setActiveTile(tileIndex);
       handleTileClick(event);
     },
