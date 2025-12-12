@@ -222,7 +222,16 @@ export const InfiniteCanvasTile = memo(
             </>
           ) : (
             <>
-              <BaseImageLayer className="image-colour-base" />
+              <BaseImageLayer className="image-colour-base">
+                <Image
+                  src="/placeholder.jpg"
+                  alt=""
+                  fill
+                  style={{ objectFit: "cover", filter: "brightness(0)" }}
+                  sizes={isMobile ? "15vw" : "10vw"}
+                  loading="lazy"
+                />
+              </BaseImageLayer>
               <HighResImageLayer className="high-res-image-layer" />
             </>
           )}

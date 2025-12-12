@@ -57,6 +57,9 @@ const ImageComponent = (props: Props) => {
 
   const imageUrl = useMobileData?.image?.asset?.url ?? data?.image?.asset?.url;
   const imageAltText = alt || data?.image?.alt || "Visual media content";
+  const isFallback = !imageUrl;
+  const resolvedImageUrl = imageUrl ?? "/placeholder.jpg";
+  const resolvedAltText = imageUrl ? imageAltText : "";
   const loadingStrategy = isPriority
     ? "eager"
     : lazyLoad === false
@@ -68,17 +71,18 @@ const ImageComponent = (props: Props) => {
       className="media-wrapper"
       style={aspectPadding ? { paddingTop: aspectPadding } : undefined}
     >
-      {imageUrl && (
-        <Image
-          src={imageUrl}
-          alt={imageAltText}
-          priority={isPriority}
-          fill
-          style={{ objectFit: "cover" }}
-          sizes={sizes}
-          loading={loadingStrategy}
-        />
-      )}
+      <Image
+        src={resolvedImageUrl}
+        alt={resolvedAltText}
+        priority={isPriority}
+        fill
+        style={{
+          objectFit: "cover",
+          ...(isFallback ? { filter: "brightness(0)" } : null),
+        }}
+        sizes={sizes}
+        loading={loadingStrategy}
+      />
     </ImageComponentWrapper>
   );
 };
