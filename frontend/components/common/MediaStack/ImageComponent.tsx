@@ -1,5 +1,6 @@
 import Image from "next/image";
 import styled from "styled-components";
+import { useEffect, useRef } from "react";
 import { MediaType } from "../../../shared/types/types";
 
 const ImageComponentWrapper = styled.div`
@@ -32,6 +33,7 @@ type Props = {
   // Total parallax travel as a percentage of container height (e.g., 20 => image moves ±10%)
   parallaxStrength?: number;
   aspectPadding?: string;
+  onReady?: () => void;
 };
 
 const ImageComponent = (props: Props) => {
@@ -47,6 +49,7 @@ const ImageComponent = (props: Props) => {
     useImageParallax = false,
     parallaxStrength = 20,
     aspectPadding,
+    onReady,
   } = props;
 
   // Set responsive image sizes
@@ -65,6 +68,11 @@ const ImageComponent = (props: Props) => {
     : lazyLoad === false
       ? "eager"
       : "lazy";
+  const readyCalledRef = useRef(false);
+
+  useEffect(() => {
+    readyCalledRef.current = false;
+  }, [resolvedImageUrl]);
 
   return (
     <ImageComponentWrapper
@@ -82,6 +90,11 @@ const ImageComponent = (props: Props) => {
         }}
         sizes={sizes}
         loading={loadingStrategy}
+        onLoad={() => {
+          if (readyCalledRef.current) return;
+          readyCalledRef.current = true;
+          onReady?.();
+        }}
       />
     </ImageComponentWrapper>
   );

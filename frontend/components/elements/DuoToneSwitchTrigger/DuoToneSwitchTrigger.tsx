@@ -66,6 +66,16 @@ const DuoToneSwitchTrigger = (props: Props) => {
     } else {
       body.classList.add("remove-duotone");
     }
+
+    // Let other components (like the InfiniteCanvas) react immediately without
+    // having to observe DOM mutations.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("duotone-toggle", {
+          detail: { isDuotoneOff: !isOn },
+        })
+      );
+    }
   }, [isOn]);
 
   const handleToggle = () => {

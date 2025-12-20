@@ -1,5 +1,4 @@
 import styled from "styled-components";
-import { useInView } from "react-intersection-observer";
 import ImageComponent from "./ImageComponent";
 import VideoComponent from "./VideoComponent";
 import { MediaType } from "../../../shared/types/types";
@@ -21,6 +20,8 @@ type Props = {
   useMobileData?: MediaType;
   aspectPadding?: string;
   shouldPlayVideo?: boolean;
+  onReady?: () => void;
+  onPlaybackStart?: () => void;
 };
 
 const MediaStack = (props: Props) => {
@@ -36,20 +37,22 @@ const MediaStack = (props: Props) => {
     useMobileData,
     aspectPadding,
     shouldPlayVideo,
+    onReady,
+    onPlaybackStart,
   } = props ?? {};
 
   // sizes="(max-width: 768px) 38vw, (max-width: 1024px) 20vw, 15vw"
 
   const useVideo = data?.mediaType === "video";
-
-  const { ref, inView } = useInView({
-    triggerOnce: true,
-    threshold: 0.2,
-    rootMargin: "-5%",
-  });
+  // This project only uses MediaStack inside the infinite canvas tiles.
+  // IntersectionObserver adds measurable overhead when there can be ~200 tiles,
+  // and isn't needed here because:
+  // - Images can rely on Next/Image's native lazy-loading.
+  // - Videos are only mounted when hovered/active (so they're necessarily visible).
+  const inView = true;
 
   return (
-    <MediaStackWrapper ref={ref} className="media-stack-wrapper">
+    <MediaStackWrapper className="media-stack-wrapper">
       {useVideo && (
         <VideoComponent
           data={data}
@@ -61,6 +64,8 @@ const MediaStack = (props: Props) => {
           minResolution={minResolution}
           aspectPadding={aspectPadding}
           shouldPlay={shouldPlayVideo}
+          onReady={onReady}
+          onPlaybackStart={onPlaybackStart}
         />
       )}
       {!useVideo && (
@@ -75,6 +80,7 @@ const MediaStack = (props: Props) => {
           lazyLoad={lazyLoad}
           useImageParallax={useImageParallax}
           aspectPadding={aspectPadding}
+          onReady={onReady}
         />
       )}
     </MediaStackWrapper>

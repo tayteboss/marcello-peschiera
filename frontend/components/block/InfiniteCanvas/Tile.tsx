@@ -56,6 +56,31 @@ const HighResImageLayer = styled.div`
   transition: opacity var(--transition-speed-default) var(--transition-ease);
 `;
 
+const LoadingOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+`;
+
+const Spinner = styled.div`
+  width: 1em;
+  height: 1em;
+  border: 0.125em solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`;
+
 const TileInner = styled.div<{
   $isActive: boolean;
 }>`
@@ -70,6 +95,7 @@ export type InfiniteCanvasTileProps = {
   aspectRatio: string;
   isVisible: boolean;
   isActive: boolean;
+  isDuotoneOff?: boolean;
   media?: MediaType;
   title?: string;
   aspectPadding?: string;
@@ -77,7 +103,6 @@ export type InfiniteCanvasTileProps = {
   tileIndex: number;
   isMobile?: boolean;
   onClick: (event: MouseEvent<HTMLDivElement>, tileIndex: number) => void;
-  onMouseDown: (event: MouseEvent<HTMLDivElement>) => void;
 };
 
 export const InfiniteCanvasTile = memo(
@@ -87,6 +112,7 @@ export const InfiniteCanvasTile = memo(
     aspectRatio,
     isVisible,
     isActive,
+    isDuotoneOff = false,
     media,
     title,
     aspectPadding,
@@ -94,9 +120,10 @@ export const InfiniteCanvasTile = memo(
     tileIndex,
     isMobile = false,
     onClick,
-    onMouseDown,
   }: InfiniteCanvasTileProps) => {
     const [isHovered, setIsHovered] = useState(false);
+    const [isHighResReady, setIsHighResReady] = useState(false);
+    const [isVideoPlaying, setIsVideoPlaying] = useState(false);
     const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(
       null
     );
@@ -113,6 +140,10 @@ export const InfiniteCanvasTile = memo(
     const isHighResOn = isActive || isHovered;
     const isVideoActive = isVideo && isHighResOn;
     const shouldPlayVideo = isVideoActive;
+    const shouldRenderHighRes = isVisible && (isHighResOn || isDuotoneOff);
+    const shouldSwapToHighRes = (isHighResOn || isDuotoneOff) && isHighResReady;
+    const showLoadingSpinner =
+      isHighResOn && isVideo && shouldRenderHighRes && !isVideoPlaying;
 
     // When a tile transitions from active -> inactive (because another tile
     // was clicked), clear any latched hover state so the high-res content
@@ -122,6 +153,19 @@ export const InfiniteCanvasTile = memo(
         setIsHovered(false);
       }
     }, [isActive]);
+
+    // If the underlying media changes, reset readiness so we don't hide the base
+    // layer until the new high-res asset is actually available.
+    useEffect(() => {
+      setIsHighResReady(false);
+      setIsVideoPlaying(false);
+    }, [
+      media?.mediaType,
+      media?.image?.asset?.url,
+      media?.thumbnailImage?.asset?.url,
+      media?.video?.asset?.playbackId,
+      media?.video?.videoLink,
+    ]);
 
     const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
       const touch = e.touches[0];
@@ -160,7 +204,6 @@ export const InfiniteCanvasTile = memo(
     return (
       <TileRoot
         onClick={(e) => onClick(e, tileIndex)}
-        onMouseDown={onMouseDown}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onMouseEnter={() => {
@@ -182,7 +225,7 @@ export const InfiniteCanvasTile = memo(
       >
         <TileInner
           $isActive={isActive}
-          className={isHighResOn ? "remove-duotone" : undefined}
+          className={shouldSwapToHighRes ? "tile-remove-duotone" : undefined}
         >
           {media ? (
             <>
@@ -200,7 +243,7 @@ export const InfiniteCanvasTile = memo(
                   <MediaStack
                     data={media}
                     alt={title ?? media.image?.alt ?? ""}
-                    sizes={isMobile ? "15vw" : "10vw"}
+                    sizes={isMobile ? "5vw" : "5vw"}
                     lazyLoad
                     noFadeInAnimation
                     shouldPlayVideo={false}
@@ -209,16 +252,31 @@ export const InfiniteCanvasTile = memo(
               </BaseImageLayer>
 
               <HighResImageLayer className="high-res-image-layer">
-                <MediaStack
-                  data={media}
-                  alt={title ?? media.image?.alt ?? ""}
-                  sizes={isMobile ? "80vw" : "40vw"}
-                  lazyLoad
-                  noFadeInAnimation
-                  shouldPlayVideo={shouldPlayVideo}
-                  minResolution="720p"
-                />
+                {shouldRenderHighRes ? (
+                  <MediaStack
+                    data={media}
+                    alt={title ?? media.image?.alt ?? ""}
+                    sizes={isMobile ? "80vw" : "40vw"}
+                    // Mounting is already gated by hover/active; use eager loading
+                    // here so the swap happens ASAP.
+                    lazyLoad={false}
+                    noFadeInAnimation
+                    shouldPlayVideo={shouldPlayVideo}
+                    minResolution="720p"
+                    onReady={() => {
+                      setIsHighResReady(true);
+                    }}
+                    onPlaybackStart={() => {
+                      setIsVideoPlaying(true);
+                    }}
+                  />
+                ) : null}
               </HighResImageLayer>
+              {showLoadingSpinner ? (
+                <LoadingOverlay aria-hidden="true">
+                  <Spinner />
+                </LoadingOverlay>
+              ) : null}
             </>
           ) : (
             <>

@@ -2,6 +2,7 @@ import MuxPlayer from "@mux/mux-player-react/lazy";
 import styled from "styled-components";
 import ReactPlayer from "react-player";
 import Image from "next/image";
+import { useEffect, useRef } from "react";
 import { MediaType } from "../../../shared/types/types";
 
 const VideoComponentWrapper = styled.div`
@@ -57,6 +58,8 @@ type Props = {
   minResolution?: undefined | "2160p" | "1440p" | "1080p" | "720p" | "480p";
   aspectPadding?: string;
   shouldPlay?: boolean;
+  onReady?: () => void;
+  onPlaybackStart?: () => void;
 };
 
 const normalizeExternalVideoUrl = (url: unknown): string | undefined => {
@@ -89,6 +92,8 @@ const VideoComponent = (props: Props) => {
     minResolution,
     aspectPadding,
     shouldPlay = false,
+    onReady,
+    onPlaybackStart,
   } = props;
   // Prefer mobile-specific video data when provided, otherwise fall back to
   // the main video. This avoids any window-size tracking and keeps the
@@ -151,6 +156,16 @@ const VideoComponent = (props: Props) => {
   // Otherwise YouTube/Vimeo will load for every in-view tile which is heavy.
   const shouldRenderPlayer =
     !playbackId && !!videoLink && (!lazyLoad || inView) && !!shouldPlay;
+  const shouldRenderMux =
+    !!playbackId && (!lazyLoad || inView) && !!shouldPlay;
+
+  const readyCalledRef = useRef(false);
+  const playbackStartedRef = useRef(false);
+
+  useEffect(() => {
+    readyCalledRef.current = false;
+    playbackStartedRef.current = false;
+  }, [playbackId, videoLink, resolvedPosterUrl]);
 
   return (
     <VideoComponentWrapper
@@ -167,6 +182,11 @@ const VideoComponent = (props: Props) => {
         }}
         sizes="100vw"
         loading={lazyLoad ? "lazy" : "eager"}
+        onLoad={() => {
+          if (readyCalledRef.current) return;
+          readyCalledRef.current = true;
+          onReady?.();
+        }}
       />
       {shouldRenderPlayer && (
         <ReactPlayer
@@ -181,26 +201,44 @@ const VideoComponent = (props: Props) => {
           config={playerConfig}
           playsInline={true}
           style={{ pointerEvents: "none" }}
-          onReady={() => console.log("ReactPlayer ready", videoLink)}
-          onStart={() => console.log("ReactPlayer started", videoLink)}
-          onPlay={() => console.log("ReactPlayer playing", videoLink)}
-          onPause={() => console.log("ReactPlayer paused", videoLink)}
-          onError={(e: any) => console.error("ReactPlayer error", e)}
+          onReady={() => {
+            if (readyCalledRef.current) return;
+            readyCalledRef.current = true;
+            onReady?.();
+          }}
+          onPlay={() => {
+            if (playbackStartedRef.current) return;
+            playbackStartedRef.current = true;
+            onPlaybackStart?.();
+          }}
         />
       )}
-      {playbackId && (
+      {shouldRenderMux && (
         <MuxPlayer
           streamType="on-demand"
           playbackId={playbackId}
           loop={true}
           thumbnailTime={1}
           loading={lazyLoad ? "viewport" : "page"}
+          // This component only mounts when hovered/active, so it's safe to
+          // preload aggressively to reduce hover-to-play latency.
           preload="auto"
           muted
           playsInline={true}
+          autoPlay={true}
           poster={resolvedPosterUrl}
           minResolution={minResolution}
           paused={!(inView && shouldPlay)}
+          onCanPlay={() => {
+            if (readyCalledRef.current) return;
+            readyCalledRef.current = true;
+            onReady?.();
+          }}
+          onPlaying={() => {
+            if (playbackStartedRef.current) return;
+            playbackStartedRef.current = true;
+            onPlaybackStart?.();
+          }}
         />
       )}
     </VideoComponentWrapper>

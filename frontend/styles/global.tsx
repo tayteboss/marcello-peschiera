@@ -335,7 +335,12 @@ export const GlobalStyles = createGlobalStyle`
 		}
 	}
 
-	.remove-duotone {
+	/* IMPORTANT:
+	   We keep body.remove-duotone as a global toggle, but the tile layer swap
+	   must be scoped to a tile-only class. Otherwise body.remove-duotone
+	   would hide all base layers even when a tile hasn't mounted a high-res
+	   layer (which now mounts lazily for performance). */
+	.tile-remove-duotone {
 		.image-colour-base {
 			opacity: 0;
 		}

@@ -67,7 +67,7 @@ const ACTIVE_TILE_CLEAR_THRESHOLD = 100;
 // Minimum number of tiles we want to show on the canvas. If there are fewer
 // projects than this, we'll deterministically repeat them until we reach this
 // count so the canvas still feels substantial, but without infinite wrapping.
-const MIN_PROJECTS_FOR_CANVAS = 100;
+const MIN_PROJECTS_FOR_CANVAS = 50;
 
 // Lower values make panning feel more sluggish (slower movement for the same input delta).
 // Increase this if you want snappier / faster panning.
@@ -172,6 +172,25 @@ const InfiniteCanvas = (props: Props) => {
   const dragDistanceRef = useRef<number>(0); // Track total drag distance
   const zoomBeforeDragRef = useRef<number>(1); // Store zoom level before drag starts
   const [activeTileIndex, setActiveTileIndex] = useState<number | null>(null);
+  const [isDuotoneOff, setIsDuotoneOff] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Sync initial state from the DOM (set by DuoToneSwitchTrigger).
+    setIsDuotoneOff(document.body.classList.contains("remove-duotone"));
+
+    const handle = (e: Event) => {
+      const ce = e as CustomEvent<{ isDuotoneOff?: boolean }>;
+      const next = !!ce.detail?.isDuotoneOff;
+      setIsDuotoneOff(next);
+    };
+
+    window.addEventListener("duotone-toggle", handle as EventListener);
+    return () => {
+      window.removeEventListener("duotone-toggle", handle as EventListener);
+    };
+  }, []);
 
   // Shared world-space offset for the infinite grid. All row positions are
   // derived from this and updated via GSAP for smooth motion.
@@ -667,6 +686,7 @@ const InfiniteCanvas = (props: Props) => {
       y: targetWorldY,
       duration: CANVAS_ZOOM_DURATION,
       ease: "power3.out",
+      onUpdate: updateCanvasTransform,
       onComplete: () => {
         isTileAnimatingRef.current = false;
       },
@@ -695,20 +715,17 @@ const InfiniteCanvas = (props: Props) => {
     const xTo = gsap.quickTo(worldOffsetRef.current, "x", {
       duration: 1.5,
       ease: "power4",
+      onUpdate: updateCanvasTransform,
     });
 
     const yTo = gsap.quickTo(worldOffsetRef.current, "y", {
       duration: 1.5,
       ease: "power4",
+      onUpdate: updateCanvasTransform,
     });
 
     xToRef.current = xTo;
     yToRef.current = yTo;
-
-    // Use a ticker to continuously update the canvas position during smooth animation
-    const ticker = gsap.ticker.add(() => {
-      updateCanvasTransform();
-    });
 
     const markPanning = () => {
       // Only toggle React state when we actually change panning state to
@@ -1029,7 +1046,6 @@ const InfiniteCanvas = (props: Props) => {
 
     return () => {
       observer.kill();
-      gsap.ticker.remove(ticker);
 
       if (panningTimeoutRef.current !== null) {
         window.clearTimeout(panningTimeoutRef.current);
@@ -1143,12 +1159,12 @@ const InfiniteCanvas = (props: Props) => {
                         aspectRatio={tile.aspectRatio}
                         isVisible={tile.isVisible}
                         isActive={isActive}
+                        isDuotoneOff={isDuotoneOff}
                         media={tile.project?.media}
                         title={tile.project?.title}
                         aspectPadding={tile.aspectPadding}
                         widthFactor={tile.widthFactor}
                         onClick={handleTileClickWrapper}
-                        onMouseDown={() => {}}
                         isMobile={isMobile}
                       />
                     );
