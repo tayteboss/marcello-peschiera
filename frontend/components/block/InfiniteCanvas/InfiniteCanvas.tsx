@@ -40,14 +40,14 @@ const MOBILE_TILE_GAP_VW = 1;
 // the user can reach later with the trackpad.
 const CANVAS_ZOOM_DEFAULT = 1;
 const CANVAS_ZOOM_MAX = 3;
-const CANVAS_ZOOM_MIN = 0.7;
+const CANVAS_ZOOM_MIN = 0.4;
 
 // Intro-only zoom (further out than MIN). Tweak these values to taste.
 const CANVAS_ZOOM_INTRO = 0.4;
 
 const CANVAS_ZOOM_DEFAULT_MOBILE = 1;
 const CANVAS_ZOOM_MAX_MOBILE = 1.5;
-const CANVAS_ZOOM_MIN_MOBILE = 0.7;
+const CANVAS_ZOOM_MIN_MOBILE = 0.1;
 const CANVAS_ZOOM_INTRO_MOBILE = 0.5;
 
 const CANVAS_ZOOM_DURATION = 1.25;
@@ -236,8 +236,9 @@ const InfiniteCanvas = (props: Props) => {
   // Incremental values for smooth quickTo animation (like the reference component)
   const incrXRef = useRef<number>(0);
   const incrYRef = useRef<number>(0);
-  const xToRef = useRef<((value: number) => void) | null>(null);
-  const yToRef = useRef<((value: number) => void) | null>(null);
+  type QuickToFunc = ReturnType<typeof gsap.quickTo>;
+  const xToRef = useRef<QuickToFunc | null>(null);
+  const yToRef = useRef<QuickToFunc | null>(null);
 
   // While the intro zoom animation is playing (after the loading overlay
   // disappears), we temporarily disable dragging and wheel zoom so the camera
@@ -432,6 +433,33 @@ const InfiniteCanvas = (props: Props) => {
     if (!containerRef.current) return;
     const { x, y } = worldOffsetRef.current;
     gsap.set(containerRef.current, { x, y });
+  };
+
+  const syncPanTargets = () => {
+    const { x, y } = worldOffsetRef.current;
+    incrXRef.current = x;
+    incrYRef.current = y;
+  };
+
+  const resetQuickTo = () => {
+    if (!containerRef.current) return;
+
+    xToRef.current?.tween?.kill();
+    yToRef.current?.tween?.kill();
+
+    xToRef.current = gsap.quickTo(worldOffsetRef.current, "x", {
+      duration: 1.5,
+      ease: "power4",
+      onUpdate: updateCanvasTransform,
+    });
+
+    yToRef.current = gsap.quickTo(worldOffsetRef.current, "y", {
+      duration: 1.5,
+      ease: "power4",
+      onUpdate: updateCanvasTransform,
+    });
+
+    syncPanTargets();
   };
 
   const setActiveTile = (index: number | null) => {
@@ -688,6 +716,7 @@ const InfiniteCanvas = (props: Props) => {
       ease: "power3.out",
       onUpdate: updateCanvasTransform,
       onComplete: () => {
+        resetQuickTo();
         isTileAnimatingRef.current = false;
       },
     });
@@ -712,20 +741,7 @@ const InfiniteCanvas = (props: Props) => {
 
     // Initialize quickTo functions for smooth continuous animation (like reference component)
     // quickTo animates the worldOffset smoothly with power4 easing
-    const xTo = gsap.quickTo(worldOffsetRef.current, "x", {
-      duration: 1.5,
-      ease: "power4",
-      onUpdate: updateCanvasTransform,
-    });
-
-    const yTo = gsap.quickTo(worldOffsetRef.current, "y", {
-      duration: 1.5,
-      ease: "power4",
-      onUpdate: updateCanvasTransform,
-    });
-
-    xToRef.current = xTo;
-    yToRef.current = yTo;
+    resetQuickTo();
 
     const markPanning = () => {
       // Only toggle React state when we actually change panning state to
@@ -763,6 +779,8 @@ const InfiniteCanvas = (props: Props) => {
         if (isIntroAnimatingRef.current || isTileAnimatingRef.current) {
           return;
         }
+
+        resetQuickTo();
 
         // This fires when a pointer/touch drag starts (not wheel)
         isDraggingRef.current = true;
@@ -920,7 +938,7 @@ const InfiniteCanvas = (props: Props) => {
         const { minX, maxX } = getPanBounds(currentScale);
 
         incrXRef.current = gsap.utils.clamp(minX, maxX, incrXRef.current);
-        xTo(incrXRef.current);
+        xToRef.current?.(incrXRef.current);
 
         const distance = Math.abs(self.deltaX);
 
@@ -998,7 +1016,7 @@ const InfiniteCanvas = (props: Props) => {
         const { minY, maxY } = getPanBounds(currentScale);
 
         incrYRef.current = gsap.utils.clamp(minY, maxY, incrYRef.current);
-        yTo(incrYRef.current);
+        yToRef.current?.(incrYRef.current);
 
         const distance = Math.abs(self.deltaY);
 
@@ -1069,6 +1087,65 @@ const InfiniteCanvas = (props: Props) => {
         ? CANVAS_ZOOM_DEFAULT_MOBILE
         : CANVAS_ZOOM_DEFAULT;
 
+      // Recalculate dimensions and force center BEFORE the animation starts.
+      // This ensures that if the initial layout measurement (e.g. on mobile) was
+      // incorrect or happened before content loaded, we start from the true center
+      // rather than the top or an offset position.
+      if (containerRef.current && wrapperRef.current) {
+        // Measure canvas dimensions
+        let contentWidth = containerRef.current.scrollWidth;
+        const contentHeight = containerRef.current.scrollHeight;
+
+        const children = containerRef.current.children;
+        if (children.length > 0) {
+          let maxChildWidth = 0;
+          for (let i = 0; i < children.length; i++) {
+            const child = children[i] as HTMLElement;
+            maxChildWidth = Math.max(maxChildWidth, child.offsetWidth);
+          }
+          if (maxChildWidth > contentWidth) {
+            contentWidth = maxChildWidth;
+          }
+        }
+
+        const canvasWidth = contentWidth;
+        const canvasHeight = contentHeight;
+
+        // Measure viewport (prefer visualViewport for mobile, fallback to wrapper rect)
+        let vWidth = vv?.width ?? window.innerWidth;
+        let vHeight = vv?.height ?? window.innerHeight;
+
+        const rect = wrapperRef.current.getBoundingClientRect();
+        vWidth = rect.width || vWidth;
+        vHeight = rect.height || vHeight;
+
+        // Update refs with fresh measurements
+        canvasSizeRef.current = { width: canvasWidth, height: canvasHeight };
+        viewportSizeRef.current = {
+          width: vWidth,
+          height: vHeight,
+        };
+
+        // Calculate center position
+        const centerX = 0;
+        const centerY = (vHeight - canvasHeight) / 2;
+
+        // Clamp to bounds for the current zoom level (intro zoom)
+        // We use the current scale (intro) to ensure we are within bounds before animating
+        const currentScale = canvasScaleRef.current || 1;
+        const { minX, maxX, minY, maxY } = getPanBounds(currentScale);
+
+        const clampedX = gsap.utils.clamp(minX, maxX, centerX);
+        const clampedY = gsap.utils.clamp(minY, maxY, centerY);
+
+        // Force update position
+        worldOffsetRef.current.x = clampedX;
+        worldOffsetRef.current.y = clampedY;
+        incrXRef.current = clampedX;
+        incrYRef.current = clampedY;
+        updateCanvasTransform();
+      }
+
       // Block user panning/zooming while this intro animation runs.
       isIntroAnimatingRef.current = true;
 
@@ -1088,12 +1165,67 @@ const InfiniteCanvas = (props: Props) => {
           // latest canvas and viewport measurements so that the user always
           // lands in the exact middle of the canvas (especially important on
           // mobile where the viewport can change as chrome hides).
-          // We intentionally do NOT force worldOffset to 0,0 here because that
-          // would trigger the "first load" centering logic in recalcPanBounds,
-          // causing a visual snap if the viewport height has changed (mobile URL bar).
-          // Instead, we just let recalcPanBounds clamp the *existing* position
-          // to the new bounds, which is smoother.
-          recalcPanBounds();
+          // Recalculate measurements to get fresh viewport/canvas sizes
+          // (especially important on mobile where viewport height may have changed).
+          if (!containerRef.current) return;
+
+          // Measure canvas dimensions
+          let contentWidth = containerRef.current.scrollWidth;
+          const contentHeight = containerRef.current.scrollHeight;
+
+          const children = containerRef.current.children;
+          if (children.length > 0) {
+            let maxChildWidth = 0;
+            for (let i = 0; i < children.length; i++) {
+              const child = children[i] as HTMLElement;
+              maxChildWidth = Math.max(maxChildWidth, child.offsetWidth);
+            }
+            if (maxChildWidth > contentWidth) {
+              contentWidth = maxChildWidth;
+            }
+          }
+
+          const canvasWidth = contentWidth;
+          const canvasHeight = contentHeight;
+
+          // Measure viewport (prefer visualViewport for mobile, fallback to wrapper rect)
+          const vv = window.visualViewport;
+          let viewportWidth = vv?.width ?? window.innerWidth;
+          let viewportHeight = vv?.height ?? window.innerHeight;
+
+          if (wrapperRef.current) {
+            const rect = wrapperRef.current.getBoundingClientRect();
+            viewportWidth = rect.width || viewportWidth;
+            viewportHeight = rect.height || viewportHeight;
+          }
+
+          // Update refs with fresh measurements
+          canvasSizeRef.current = { width: canvasWidth, height: canvasHeight };
+          viewportSizeRef.current = {
+            width: viewportWidth,
+            height: viewportHeight,
+          };
+
+          // Calculate center position
+          const centerX = 0;
+          const centerY = (viewportHeight - canvasHeight) / 2;
+
+          // Clamp to bounds for the current zoom level
+          const { minX, maxX, minY, maxY } = getPanBounds(defaultZoom);
+          const clampedX = gsap.utils.clamp(minX, maxX, centerX);
+          const clampedY = gsap.utils.clamp(minY, maxY, centerY);
+
+          // Update world offset to the centered position
+          worldOffsetRef.current.x = clampedX;
+          worldOffsetRef.current.y = clampedY;
+          incrXRef.current = clampedX;
+          incrYRef.current = clampedY;
+
+          // Update pan bounds ref for future calculations
+          panBoundsRef.current = { minX, maxX, minY, maxY };
+
+          // Update the transform immediately
+          updateCanvasTransform();
         },
       });
     };
