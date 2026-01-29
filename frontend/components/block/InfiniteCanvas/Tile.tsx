@@ -137,7 +137,7 @@ export const InfiniteCanvasTile = memo(
     // fully active (clicked). For video tiles, this should latch playback so
     // the video continues even after hover ends until the active tile is
     // cleared by panning or another tile is activated.
-    const isHighResOn = isActive || isHovered;
+    const isHighResOn = isActive || (!isMobile && isHovered);
     const isVideoActive = isVideo && isHighResOn;
     const shouldPlayVideo = isVideoActive;
     const shouldRenderHighRes = isVisible && (isHighResOn || isDuotoneOff);
@@ -207,10 +207,12 @@ export const InfiniteCanvasTile = memo(
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         onMouseEnter={() => {
+          if (isMobile) return;
           // CSS pointer-events: none on parent handles panning interactions.
           setIsHovered(true);
         }}
         onMouseLeave={() => {
+          if (isMobile) return;
           // Only clear hover when the tile is not active. For active tiles
           // (especially videos), we want the visual "hover" styling and
           // high-res content to remain even after the pointer leaves.
