@@ -25,6 +25,10 @@ const DesktopTriggerButton = styled.button`
   align-items: center;
   gap: 0.25rem;
 
+  body.remove-duotone & {
+    color: var(--colour-light);
+  }
+
   @media ${(props) => props.theme.mediaBreakpoints.tabletPortrait} {
     display: none;
   }
@@ -50,6 +54,10 @@ const MobileTriggerButton = styled.button`
     justify-content: flex-end;
     text-align: right;
     flex: 1;
+
+    body.remove-duotone & {
+      color: var(--colour-light);
+    }
   }
 `;
 
@@ -63,6 +71,10 @@ const FilterButton = styled.button<{ $isActive: boolean }>`
   cursor: pointer;
   color: var(--colour-dark);
   text-decoration: ${(props) => (props.$isActive ? "underline" : "none")};
+
+  body.remove-duotone & {
+    color: var(--colour-light);
+  }
 
   &:hover {
     text-decoration: underline;
@@ -79,6 +91,10 @@ const CloseFilters = styled.button`
   cursor: pointer;
   color: var(--colour-dark);
   text-decoration: none;
+
+  body.remove-duotone & {
+    color: var(--colour-light);
+  }
 `;
 
 const categories: FilterCategory[] = [

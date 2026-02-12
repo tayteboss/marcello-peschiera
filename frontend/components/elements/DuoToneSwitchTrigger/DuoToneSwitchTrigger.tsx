@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import styled from "styled-components";
 
@@ -49,50 +48,24 @@ const knobTransition = {
 
 type Props = {
   isHidden: boolean;
+  isActive: boolean;
+  onToggle: () => void;
 };
 
 const DuoToneSwitchTrigger = (props: Props) => {
-  const { isHidden } = props;
-
-  const [isOn, setIsOn] = useState<boolean>(true);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-
-    const body = document.body;
-
-    if (isOn) {
-      body.classList.remove("remove-duotone");
-    } else {
-      body.classList.add("remove-duotone");
-    }
-
-    // Let other components (like the InfiniteCanvas) react immediately without
-    // having to observe DOM mutations.
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent("duotone-toggle", {
-          detail: { isDuotoneOff: !isOn },
-        })
-      );
-    }
-  }, [isOn]);
-
-  const handleToggle = () => {
-    setIsOn((prev) => !prev);
-  };
+  const { isHidden, isActive, onToggle } = props;
 
   return (
     <DuoToneSwitchTriggerWrapper
       type="button"
-      aria-pressed={isOn}
-      onClick={handleToggle}
+      aria-pressed={isActive}
+      onClick={onToggle}
       $isHidden={isHidden}
     >
       <ToggleTrack>
         <ToggleKnob
           animate={{
-            x: isOn ? 0 : 24 - 2 - 2 - 10, // track width - left padding - right padding - knob size
+            x: isActive ? 0 : 24 - 2 - 2 - 10, // track width - left padding - right padding - knob size
           }}
           transition={knobTransition}
         />

@@ -38,20 +38,20 @@ const MOBILE_TILE_GAP_VW = 1;
 // We allow zooming out slightly below this (MIN) and zooming in above this (MAX).
 // INTRO can go beyond MIN so the opening move can feel more dramatic than what
 // the user can reach later with the trackpad.
-const CANVAS_ZOOM_DEFAULT = 1;
-const CANVAS_ZOOM_MAX = 3;
-const CANVAS_ZOOM_MIN = 0.4;
+const CANVAS_ZOOM_DEFAULT = 1.25;
+const CANVAS_ZOOM_MAX = 1.75;
+const CANVAS_ZOOM_MIN = 1;
 
 // Intro-only zoom (further out than MIN). Tweak these values to taste.
-const CANVAS_ZOOM_INTRO = 0.4;
+const CANVAS_ZOOM_INTRO = 0.75;
 
-const CANVAS_ZOOM_DEFAULT_MOBILE = 1;
-const CANVAS_ZOOM_MAX_MOBILE = 1.5;
-const CANVAS_ZOOM_MIN_MOBILE = 0.1;
-const CANVAS_ZOOM_INTRO_MOBILE = 0.5;
+const CANVAS_ZOOM_DEFAULT_MOBILE = 1.25;
+const CANVAS_ZOOM_MAX_MOBILE = 1.75;
+const CANVAS_ZOOM_MIN_MOBILE = 1;
+const CANVAS_ZOOM_INTRO_MOBILE = 0.75;
 
 const CANVAS_ZOOM_DURATION = 1.25;
-const INTERMEDIATE_CANVAS_ZOOM = 1.5;
+const INTERMEDIATE_CANVAS_ZOOM = 1.25;
 
 // Staged zoom-out thresholds (approx px of user movement after zoom).
 // After FIRST_ZOOM_OUT_THRESHOLD, zoom out to INTERMEDIATE_CANVAS_ZOOM.

@@ -238,7 +238,7 @@ export const InfiniteCanvasTile = memo(
                     alt={title ?? thumbnailImage.alt ?? ""}
                     fill
                     style={{ objectFit: "cover" }}
-                    sizes={isMobile ? "15vw" : "10vw"}
+                    sizes={isMobile ? "5vw" : "5vw"}
                     loading="lazy"
                   />
                 ) : (
@@ -258,7 +258,7 @@ export const InfiniteCanvasTile = memo(
                   <MediaStack
                     data={media}
                     alt={title ?? media.image?.alt ?? ""}
-                    sizes={isMobile ? "80vw" : "40vw"}
+                    sizes={isMobile ? "80vw" : "30vw"}
                     // Mounting is already gated by hover/active; use eager loading
                     // here so the swap happens ASAP.
                     lazyLoad={false}
@@ -288,7 +288,7 @@ export const InfiniteCanvasTile = memo(
                   alt=""
                   fill
                   style={{ objectFit: "cover", filter: "brightness(0)" }}
-                  sizes={isMobile ? "15vw" : "10vw"}
+                  sizes={isMobile ? "15vw" : "5vw"}
                   loading="lazy"
                 />
               </BaseImageLayer>
