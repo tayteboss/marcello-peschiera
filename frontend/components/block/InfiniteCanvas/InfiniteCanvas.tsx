@@ -71,7 +71,7 @@ const MIN_PROJECTS_FOR_CANVAS = 50;
 
 // Lower values make panning feel more sluggish (slower movement for the same input delta).
 // Increase this if you want snappier / faster panning.
-const PAN_SENSITIVITY = 1;
+const PAN_SENSITIVITY = 0.6;
 
 // Threshold in pixels to distinguish between a click and a drag
 const DRAG_THRESHOLD = 1;
