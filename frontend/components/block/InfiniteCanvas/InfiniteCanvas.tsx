@@ -92,8 +92,10 @@ const mapProjectTypeToFilterCategory = (
   }
 };
 
-const InfiniteCanvasWrapper = styled.section`
+  const InfiniteCanvasWrapper = styled.section`
   height: 100vh;
+  /* Use dvh for mobile browsers to correctly handle address bar resizing */
+  height: 100dvh;
   width: 100%;
   overflow: hidden;
   touch-action: none;
@@ -125,7 +127,7 @@ const InfiniteCanvasInner = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  will-change: transform;
+  will-change: transform, opacity;
 `;
 
 const BlockWrapper = styled.div`
@@ -187,8 +189,22 @@ const InfiniteCanvas = (props: Props) => {
     };
 
     window.addEventListener("duotone-toggle", handle as EventListener);
+    
+    // Add mutation observer to watch body class changes as a fallback
+    // This catches changes even if the custom event is missed or not fired
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.attributeName === "class") {
+          setIsDuotoneOff(document.body.classList.contains("remove-duotone"));
+        }
+      });
+    });
+    
+    observer.observe(document.body, { attributes: true });
+
     return () => {
       window.removeEventListener("duotone-toggle", handle as EventListener);
+      observer.disconnect();
     };
   }, []);
 
@@ -251,6 +267,33 @@ const InfiniteCanvas = (props: Props) => {
   const isTileAnimatingRef = useRef<boolean>(false);
 
   const { activeCategories } = useGalleryFilter();
+  const [visibleCategories, setVisibleCategories] =
+    useState<FilterCategory[]>(activeCategories);
+
+  // Sync visibleCategories with activeCategories with a fade transition
+  useEffect(() => {
+    // Check if arrays are equal (shallow comparison is sufficient for strings)
+    const isSame =
+      activeCategories.length === visibleCategories.length &&
+      activeCategories.every((val, index) => val === visibleCategories[index]);
+
+    if (isSame) return;
+
+    if (!containerRef.current) {
+      setVisibleCategories(activeCategories);
+      return;
+    }
+
+    // Fade out content before changing categories
+    gsap.to(containerRef.current, {
+      opacity: 0,
+      duration: 0.3,
+      ease: "power2.inOut",
+      onComplete: () => {
+        setVisibleCategories(activeCategories);
+      },
+    });
+  }, [activeCategories, visibleCategories]);
 
   // Derived styling constants based on device
   const tileGapVw = isMobile ? MOBILE_TILE_GAP_VW : DESKTOP_TILE_GAP_VW;
@@ -412,19 +455,32 @@ const InfiniteCanvas = (props: Props) => {
     });
   }, [projects, numberOfImages]);
 
-  // Determine visibility for each tile based on active categories
-  const tilesWithVisibility = useMemo(() => {
+  // Filter tiles based on active categories.
+  // Instead of just marking visibility, we now produce a filtered list so the
+  // grid reshuffles to remove gaps.
+  const filteredTiles = useMemo(() => {
     const showAll =
-      activeCategories.length === 0 || activeCategories.includes("All");
+      visibleCategories.length === 0 || visibleCategories.includes("All");
 
-    return tilesWithCategories.map((tile) => {
-      const isVisible = showAll || activeCategories.includes(tile.category);
-      return {
-        ...tile,
-        isVisible,
-      };
-    });
-  }, [tilesWithCategories, activeCategories]);
+    if (showAll) {
+      return tilesWithCategories.map((tile) => ({ ...tile, isVisible: true }));
+    }
+
+    return tilesWithCategories
+      .filter((tile) => visibleCategories.includes(tile.category))
+      .map((tile) => ({ ...tile, isVisible: true }));
+  }, [tilesWithCategories, visibleCategories]);
+
+  // Calculate dynamic grid dimensions based on the FILTERED tile count.
+  const { displayGridRows, displayGridCols } = useMemo(() => {
+    const count = filteredTiles.length;
+    if (count === 0) {
+      return { displayGridRows: 0, displayGridCols: 0 };
+    }
+    const cols = Math.ceil(Math.sqrt(count));
+    const rows = Math.ceil(count / cols);
+    return { displayGridRows: rows, displayGridCols: cols };
+  }, [filteredTiles.length]);
 
   // Apply the current world offset as a translation to the entire canvas
   // container. This replaces the previous per-row wrapping logic so panning is
@@ -492,6 +548,8 @@ const InfiniteCanvas = (props: Props) => {
   }, []);
   // Helper to calculate panning bounds based on zoom level.
   // This ensures that as we zoom in, the user can pan further to reach the edges.
+  // It also correctly handles cases where content is smaller than the viewport by
+  // pinning it to the center.
   const getPanBounds = useCallback((scale: number) => {
     const { width: canvasWidth, height: canvasHeight } = canvasSizeRef.current;
     const { width: viewportWidth, height: viewportHeight } =
@@ -501,29 +559,33 @@ const InfiniteCanvas = (props: Props) => {
     const padX = viewportWidth * 0.1;
     const padY = viewportHeight * 0.1;
 
-    // X Axis
-    const visualWidth = canvasWidth * scale;
+    // 1. Calculate the center position for the content
+    // X is always centered at 0
+    const centerX = 0;
+    // Y center is relative to viewport and canvas height
+    // When content is smaller than viewport, this pins it to the visual vertical center
+    const centerY = (viewportHeight - canvasHeight) / 2;
 
-    // Calculate overflow considering padding
-    // We want to allow panning until the edge is padX inside/outside the viewport
-    // Formula: Max Offset = (VisualWidth - ViewportWidth + 2 * Padding) / (2 * Scale)
-    // This allows panning past the edge by padX/scale in unscaled units
-    // Ensure halfX is at least 0 to prevent minX > maxX when content fits in viewport
-    const halfX = Math.max(
+    // 2. Calculate the "overflow" range
+    // How much can we move away from the center in each direction?
+    // Formula: (VisualSize - ViewportSize + 2 * Padding) / (2 * Scale)
+    // We use Math.max(0, ...) to ensure that if content fits entirely within
+    // the viewport (minus padding), we don't allow panning at all (pinned to center).
+    
+    const rangeX = Math.max(
       0,
-      (visualWidth - viewportWidth + 2 * padX) / (2 * scale)
+      (canvasWidth * scale - viewportWidth + 2 * padX) / (2 * scale)
     );
-    const minX = -halfX;
-    const maxX = halfX;
+    
+    const rangeY = Math.max(
+      0,
+      (canvasHeight * scale - viewportHeight + 2 * padY) / (2 * scale)
+    );
 
-    // Y Axis
-    // Calculate vertical bounds allowing for padding
-    // MaxY (pulling down) -> Visual Top moves to padY
-    const maxY = viewportHeight / 2 + (padY - viewportHeight / 2) / scale;
-
-    // MinY (pulling up) -> Visual Bottom moves to ViewportHeight - padY
-    const minY =
-      viewportHeight / 2 + (viewportHeight / 2 - padY) / scale - canvasHeight;
+    const minX = centerX - rangeX;
+    const maxX = centerX + rangeX;
+    const minY = centerY - rangeY;
+    const maxY = centerY + rangeY;
 
     return { minX, maxX, minY, maxY };
   }, []);
@@ -605,7 +667,124 @@ const InfiniteCanvas = (props: Props) => {
     incrYRef.current = nextY;
 
     updateCanvasTransform();
-  }, [getPanBounds, gridRows, gridCols, numberOfImages]);
+  }, [getPanBounds, displayGridRows, displayGridCols, numberOfImages]);
+
+  // Handle filter changes: Recenter camera and recalculate bounds
+  useEffect(() => {
+    // Determine target zoom based on device
+    const vv = window.visualViewport;
+    const viewportWidth = vv?.width ?? window.innerWidth;
+    const isMobileViewport = viewportWidth <= 768;
+    const defaultZoom = isMobileViewport
+      ? CANVAS_ZOOM_DEFAULT_MOBILE
+      : CANVAS_ZOOM_DEFAULT;
+
+    // Reset zoom state
+    canvasScaleRef.current = defaultZoom;
+    moveSinceZoomRef.current = 0;
+    zoomStageRef.current = 0;
+    
+    // Clear active tile on filter change
+    setActiveTile(null);
+
+    // Animate zoom to default
+    if (zoomLayerRef.current) {
+      gsap.to(zoomLayerRef.current, {
+        scale: defaultZoom,
+        transformOrigin: "50% 50%",
+        duration: CANVAS_ZOOM_DURATION,
+        ease: "power3.out",
+      });
+    }
+
+    // Wait for DOM to update with new grid layout before measuring
+    const timer = setTimeout(() => {
+      if (!containerRef.current || !wrapperRef.current) return;
+
+      // 1. Force recalculation of bounds with new content size
+      // We essentially duplicate logic from recalcPanBounds but specifically for
+      // the recentering operation to ensure we have the latest values.
+      let contentWidth = containerRef.current.scrollWidth;
+      const contentHeight = containerRef.current.scrollHeight;
+      
+      const children = containerRef.current.children;
+      if (children.length > 0) {
+        let maxChildWidth = 0;
+        for (let i = 0; i < children.length; i++) {
+          const child = children[i] as HTMLElement;
+          maxChildWidth = Math.max(maxChildWidth, child.offsetWidth);
+        }
+        if (maxChildWidth > contentWidth) {
+          contentWidth = maxChildWidth;
+        }
+      }
+
+      const canvasWidth = contentWidth;
+      const canvasHeight = contentHeight;
+
+      const vv = window.visualViewport;
+      let vWidth = vv?.width ?? window.innerWidth;
+      let vHeight = vv?.height ?? window.innerHeight;
+
+      if (wrapperRef.current) {
+        const rect = wrapperRef.current.getBoundingClientRect();
+        vWidth = rect.width || vWidth;
+        vHeight = rect.height || vHeight;
+      }
+
+      // Update refs
+      canvasSizeRef.current = { width: canvasWidth, height: canvasHeight };
+      viewportSizeRef.current = { width: vWidth, height: vHeight };
+
+      // 2. Calculate Center Position
+      // Center X is 0 (since we center align rows)
+      const centerX = 0;
+      // Center Y is middle of viewport relative to canvas height
+      const centerY = (vHeight - canvasHeight) / 2;
+
+      // 3. Get bounds for default zoom
+      const { minX, maxX, minY, maxY } = getPanBounds(defaultZoom);
+
+      // 4. Clamp target to bounds
+      const targetX = gsap.utils.clamp(minX, maxX, centerX);
+      const targetY = gsap.utils.clamp(minY, maxY, centerY);
+
+      // 5. Update Bounds Ref
+      panBoundsRef.current = { minX, maxX, minY, maxY };
+
+      // 6. Animate Camera to Center
+      // Stop any existing quickTo
+      xToRef.current?.tween?.kill();
+      yToRef.current?.tween?.kill();
+
+      gsap.to(worldOffsetRef.current, {
+        x: targetX,
+        y: targetY,
+        duration: 1.5,
+        ease: "power4.out",
+        onUpdate: updateCanvasTransform,
+        onComplete: () => {
+          // Re-init quickTo at new position
+          resetQuickTo();
+        },
+      });
+
+      // Fade content back in
+      gsap.to(containerRef.current, {
+        opacity: 1,
+        duration: 0.5,
+        ease: "power2.inOut",
+        delay: 0.1,
+      });
+
+      // Sync incremental refs
+      incrXRef.current = targetX;
+      incrYRef.current = targetY;
+
+    }, 100); // Small delay to allow React render
+
+    return () => clearTimeout(timer);
+  }, [displayGridRows, displayGridCols, getPanBounds]);
 
   useEffect(() => {
     recalcPanBounds();
@@ -1271,10 +1450,10 @@ const InfiniteCanvas = (props: Props) => {
     <InfiniteCanvasWrapper ref={wrapperRef}>
       <ZoomLayer ref={zoomLayerRef}>
         <InfiniteCanvasInner ref={containerRef}>
-          {Array.from({ length: gridRows }, (_, rowIndex) => {
-            const startIndex = rowIndex * gridCols;
-            const endIndex = startIndex + gridCols;
-            const rowTiles = tilesWithVisibility.slice(startIndex, endIndex);
+          {Array.from({ length: displayGridRows }, (_, rowIndex) => {
+            const startIndex = rowIndex * displayGridCols;
+            const endIndex = startIndex + displayGridCols;
+            const rowTiles = filteredTiles.slice(startIndex, endIndex);
 
             return (
               <BlockWrapper key={`row-${rowIndex}`}>
@@ -1284,14 +1463,14 @@ const InfiniteCanvas = (props: Props) => {
 
                     return (
                       <InfiniteCanvasTile
-                        key={`row-${rowIndex}-tile-${tile.index}`}
+                        key={`tile-${tile.index}`}
                         tileIndex={tile.index}
                         index={tile.index}
                         category={tile.category}
                         aspectRatio={tile.aspectRatio}
                         isVisible={tile.isVisible}
                         isActive={isActive}
-                        isDuotoneOff={isDuotoneOff}
+                        isDuotoneOffProp={isDuotoneOff}
                         media={tile.project?.media}
                         title={tile.project?.title}
                         aspectPadding={tile.aspectPadding}

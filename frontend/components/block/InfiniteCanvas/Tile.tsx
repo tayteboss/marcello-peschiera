@@ -95,7 +95,7 @@ export type InfiniteCanvasTileProps = {
   aspectRatio: string;
   isVisible: boolean;
   isActive: boolean;
-  isDuotoneOff?: boolean;
+  isDuotoneOffProp?: boolean;
   media?: MediaType;
   title?: string;
   aspectPadding?: string;
@@ -112,7 +112,7 @@ export const InfiniteCanvasTile = memo(
     aspectRatio,
     isVisible,
     isActive,
-    isDuotoneOff = false,
+    isDuotoneOffProp = false,
     media,
     title,
     aspectPadding,
@@ -128,6 +128,44 @@ export const InfiniteCanvasTile = memo(
       null
     );
 
+    const [isDuotoneOff, setIsDuotoneOff] = useState(false);
+
+    // Sync isDuotoneOff state from document body
+    useEffect(() => {
+      // Set initial state
+      setIsDuotoneOff(document.body.classList.contains("remove-duotone"));
+
+      // Listen for custom toggle event
+      const handleToggle = (e: Event) => {
+        const ce = e as CustomEvent<{ isDuotoneOff?: boolean }>;
+        if (ce.detail?.isDuotoneOff !== undefined) {
+          setIsDuotoneOff(ce.detail.isDuotoneOff);
+        } else {
+          setIsDuotoneOff(document.body.classList.contains("remove-duotone"));
+        }
+      };
+
+      // Watch for class changes on body
+      const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          if (
+            mutation.type === "attributes" &&
+            mutation.attributeName === "class"
+          ) {
+            setIsDuotoneOff(document.body.classList.contains("remove-duotone"));
+          }
+        }
+      });
+
+      window.addEventListener("duotone-toggle", handleToggle);
+      observer.observe(document.body, { attributes: true });
+
+      return () => {
+        window.removeEventListener("duotone-toggle", handleToggle);
+        observer.disconnect();
+      };
+    }, []);
+
     const isVideo = media?.mediaType === "video";
     const thumbnailImage = isVideo
       ? (media?.thumbnailImage ?? media?.image)
@@ -140,8 +178,14 @@ export const InfiniteCanvasTile = memo(
     const isHighResOn = isActive || (!isMobile && isHovered);
     const isVideoActive = isVideo && isHighResOn;
     const shouldPlayVideo = isVideoActive;
-    const shouldRenderHighRes = isVisible && (isHighResOn || isDuotoneOff);
-    const shouldSwapToHighRes = (isHighResOn || isDuotoneOff) && isHighResReady;
+    
+    // We must respect the duotone off state from the parent prop OR the local observation
+    // The prop passed down might be stale during rapid filter changes or re-renders
+    // caused by other state updates.
+    const effectiveDuotoneOff = isDuotoneOffProp || isDuotoneOff;
+    
+    const shouldRenderHighRes = isVisible && (isHighResOn || effectiveDuotoneOff);
+    const shouldSwapToHighRes = (isHighResOn || effectiveDuotoneOff) && isHighResReady;
     const showLoadingSpinner =
       isHighResOn && isVideo && shouldRenderHighRes && !isVideoPlaying;
 
